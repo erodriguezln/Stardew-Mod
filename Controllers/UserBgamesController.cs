@@ -22,6 +22,7 @@ namespace bGamesPointsMod.Controllers
         public PointsBgamesModel PointsBgamesModel { get; private set; }
 
         public LoginResponse LoginResponse { get; private set; }
+        public TokenModel TokenModel { get; private set; }
 
         public UserBgamesController(
             IMonitor monitor,
@@ -72,10 +73,11 @@ namespace bGamesPointsMod.Controllers
 
         public async void SaveUserBgames(string email)
         {
-            string apiUrl = $"{Auth}/login";
+            string loginUrl = $"{Auth}/login";
+            var tokenRemainingUrl = $"{Auth}/token/remaining";
             try
             {
-                HttpResponseMessage response = await httpClient.GetAsync(apiUrl);
+                HttpResponseMessage response = await httpClient.GetAsync(loginUrl);
                 string jsonResponse = await response.Content.ReadAsStringAsync();
                 LoginResponse userFromApi = JsonConvert.DeserializeObject<LoginResponse>(jsonResponse);
 
@@ -83,17 +85,16 @@ namespace bGamesPointsMod.Controllers
                 {
                     LoginResponse.AccessToken = userFromApi.AccessToken;
                     LoginResponse.TokenType = userFromApi.TokenType;
-                    // Actualiza la instancia original
-                    // UserBgamesModel.Name = userFromApi.Name;
-                    // UserBgamesModel.Email = userFromApi.Email;
-                    // UserBgamesModel.Password = userFromApi.Password;
-                    // UserBgamesModel.Id_players = userFromApi.Id_players;
-                    // UserBgamesModel.Age = userFromApi.Age;
-                    // Monitor.Log($"Usuario {userFromApi.Name} guardado correctamente.", LogLevel.Info);
+
+                    HttpResponseMessage tokenResponse = await httpClient.GetAsync(tokenRemainingUrl);
+                    string tokenJsonResponse = await tokenResponse.Content.ReadAsStringAsync();
+                    TokenModel tokenInfo = JsonConvert.DeserializeObject<TokenModel>(tokenJsonResponse);
+
+                    TokenModel.ExpiresAt = tokenInfo.ExpiresAt;
 
                     // Guarda los puntos del jugador en el objeto UserBgamesModel
                     // SaveUserPoints(int.Parse(userFromApi.Id_players));
-                    // SaveCredentials(userFromApi.Email, userFromApi.Password);
+                    SaveCredentials(LoginResponse.AccessToken, TokenModel.ExpiresAt);
                 }
                 else
                 {
@@ -111,18 +112,18 @@ namespace bGamesPointsMod.Controllers
             return File.Exists(this.credentialsFilePath);
         }
 
-        // Esta funcion guarda las credenciales en un archivo JSON y al moment ode cargar dichos datos ocupa la de usercheck
-        public void SaveCredentials(string username, string password)
+        // Esta funcion guarda el access_token en un archivo JSON y al moment ode cargar dichos datos ocupa la de usercheck
+        public void SaveCredentials(string accessToken, DateTime expiresAt)
         {
             try
             {
-                string jsonContent = $"{{ \"username\": \"{username}\", \"password\": \"{password}\" }}";
+                string jsonContent = $"{accessToken}";
                 File.WriteAllText(this.credentialsFilePath, jsonContent);
-                this.Monitor.Log("Credenciales guardadas exitosamente.", LogLevel.Info);
+                this.Monitor.Log("Access Token guardado exitosamente.", LogLevel.Info);
             }
             catch (Exception ex)
             {
-                this.Monitor.Log($"Error al guardar las credenciales: {ex.Message}", LogLevel.Error);
+                this.Monitor.Log($"Error al guardar Access Token: {ex.Message}", LogLevel.Error);
             }
         }
 
@@ -142,10 +143,9 @@ namespace bGamesPointsMod.Controllers
                 string jsonContent = File.ReadAllText(this.credentialsFilePath);
                 var credentials = JsonConvert.DeserializeObject<dynamic>(jsonContent);
 
-                string username = credentials.username.ToString();
-                string password = credentials.password.ToString();
+                string accessToken = credentials.accessToken;
 
-                this.Monitor.Log($"Credenciales cargadas: Usuario: {username}", LogLevel.Info);
+                this.Monitor.Log($"Credenciales cargadas: Usuario: {accessToken}", LogLevel.Info);
 
                 // Usar await para obtener el resultado de UserCheck
                 int userCheckResult = await UserCheck(username, password);
