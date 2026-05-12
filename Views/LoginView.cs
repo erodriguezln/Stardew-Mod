@@ -75,7 +75,7 @@ namespace bGamesPointsMod.Views
                 textLimit = 50,
                 PasswordBox = true
             };
-            passwordTextBox.Text = "Password";
+            passwordTextBox.Text = "erodriguez";
 
             // Tamaño y posición fija para el botón de login
             int buttonWidth = 150; // Ancho fijo del botón
@@ -157,15 +157,20 @@ namespace bGamesPointsMod.Views
         private async void PerformLogin() {
             string email = emailTextBox.Text;
             string password = passwordTextBox.Text;
-            int loginResult = await userController.UserCheck(email, password);
 
-            if (loginResult == 1) {
+            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+            {
+                Game1.addHUDMessage(new HUDMessage("Debes completar correo y contraseña.", 2));
+                return;
+            }
+
+            var loginResult = await userController.UserCheck(email, password);
+
+            if (loginResult) {
                 userController.SaveUserBgames(email);
-                //Game1.addHUDMessage(new HUDMessage("Inicio de sesion exitoso!", 2));
                 Game1.addHUDMessage(new HUDMessage("Login successful!", 2));
             }
             else {
-                //Game1.addHUDMessage(new HUDMessage("Error al iniciar sesion, la contraseña o el correo son incorrectos!", 2));
                 Game1.addHUDMessage(new HUDMessage("Error logging in, the password or email is incorrect!", 2));
             }
         }

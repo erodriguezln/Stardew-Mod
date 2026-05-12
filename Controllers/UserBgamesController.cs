@@ -37,14 +37,8 @@ namespace bGamesPointsMod.Controllers
             this.credentialsFilePath = Path.Combine(helper.DirectoryPath, "users.json");
         }
 
-        public async Task<int> UserCheck(string email, string password)
+        public async Task<bool> UserCheck(string email, string password)
         {
-            if ((email == "" || email == " " || email == null) ||
-                (password == "" || password == "" || password == null))
-            {
-                return 3; // Datos vacíos
-            }
-
             string apiUrl = $"{Auth}/login";
             try
             {
@@ -61,18 +55,18 @@ namespace bGamesPointsMod.Controllers
                 if (response.IsSuccessStatusCode)
                 {
                     Monitor.Log($"AccessToken: {userFromApi?.AccessToken}", LogLevel.Info);
-                    return 1; // Usuario encontrado
+                    return true; // Usuario encontrado
                 }
                 else
                 {
                     Monitor.Log("Credenciales incorrectas.", LogLevel.Info);
-                    return 0; // Usuario no encontrado
+                    return false; // Usuario no encontrado
                 }
             }
             catch (Exception ex)
             {
                 Monitor.Log($"Error al intentar hacer login: {ex.Message}", LogLevel.Error);
-                return 0; // Error durante la llamada a la API
+                return false; // Error durante la llamada a la API
             }
         }
 
@@ -156,7 +150,7 @@ namespace bGamesPointsMod.Controllers
                 // Usar await para obtener el resultado de UserCheck
                 int userCheckResult = await UserCheck(username, password);
 
-                if (userCheckResult == 1)
+                if (userCheckResult)
                 {
                     SaveUserBgames(username);
                     return 1;
