@@ -42,7 +42,7 @@ namespace bGamesPointsMod.Views
 
         private void UpdateLayout() {
             // Tamaño fijo del cuadro de diálogo
-            int dialogWidth = 600; // Ancho fijo
+            int dialogWidth = 800; // Ancho fijo
             int dialogHeight = 400; // Alto fijo
 
             // Posición centrada del cuadro de diálogo
@@ -50,7 +50,7 @@ namespace bGamesPointsMod.Views
             int dialogY = (Game1.viewport.Height - dialogHeight) / 2;
 
             // Tamaño fijo para los campos de texto
-            int textBoxWidth = 420;
+            int textBoxWidth = 700;
             int textBoxHeight = 40; // Alto fijo de los TextBox
             int textBoxSpacing = 20; // Espaciado entre los TextBox
 
@@ -60,10 +60,11 @@ namespace bGamesPointsMod.Views
                 Y = dialogY + 150,
                 Width = textBoxWidth,
                 Height = textBoxHeight,
-                textLimit = 50,
-                Selected = true
+                textLimit = 100,
+                Selected = true,
+                numbersOnly = false
             };
-            emailTextBox.Text = "Email";
+            emailTextBox.Text = "enrique.rodriguez-lapuente@usach.cl";
 
             // Configurar el campo de texto para la contraseña
             passwordTextBox = new TextBox(Game1.content.Load<Texture2D>("LooseSprites\\textBox"), Game1.mouseCursors, Game1.smallFont, Game1.textColor) {
@@ -92,7 +93,7 @@ namespace bGamesPointsMod.Views
 
         public override void draw(SpriteBatch b) {
             // Tamaño fijo del cuadro de diálogo
-            int dialogWidth = 600; // Ancho fijo
+            int dialogWidth = 800; // Ancho fijo
             int dialogHeight = 400; // Alto fijo
 
             // Posición centrada del cuadro de diálogo

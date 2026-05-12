@@ -9,6 +9,9 @@ namespace bGamesPointsMod.Controllers
 {
     public class UserBgamesController
     {
+        private const string Auth = "http://localhost:8001";
+        private const string Core = "http://localhost:8012";
+
         private readonly IMonitor Monitor;
         private readonly IModHelper Helper;
         private readonly HttpClient httpClient; // Cliente HTTP para hacer las peticiones a la API externa
@@ -17,6 +20,8 @@ namespace bGamesPointsMod.Controllers
 
         public UserBgamesModel UserBgamesModel { get; private set; }
         public PointsBgamesModel PointsBgamesModel { get; private set; }
+
+        public LoginResponse LoginResponse { get; private set; }
 
         public UserBgamesController(
             IMonitor monitor,
@@ -40,53 +45,61 @@ namespace bGamesPointsMod.Controllers
                 return 3; // Datos vacíos
             }
 
-            string apiUrl = $"http://localhost:3010/player_by_email/{email}";
+            string apiUrl = $"{Auth}/login";
             try
             {
-                HttpResponseMessage response = await httpClient.GetAsync(apiUrl);
-                string jsonResponse = await response.Content.ReadAsStringAsync();
-                var userFromApi = JsonConvert.DeserializeObject<UserBgamesModel>(jsonResponse);
-
-                if (response.IsSuccessStatusCode && (userFromApi.Password == password))
+                var content = new FormUrlEncodedContent(new[]
                 {
-                    Monitor.Log($"Usuario {userFromApi.Name} encontrado en la API.", LogLevel.Info);
+                    new KeyValuePair<string, string>("username", email),
+                    new KeyValuePair<string, string>("password", password)
+                });
+
+                HttpResponseMessage response = await httpClient.PostAsync(apiUrl, content);
+                string jsonResponse = await response.Content.ReadAsStringAsync();
+                var userFromApi = JsonConvert.DeserializeObject<LoginResponse>(jsonResponse);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    Monitor.Log($"AccessToken: {userFromApi?.AccessToken}", LogLevel.Info);
                     return 1; // Usuario encontrado
                 }
                 else
                 {
-                    Monitor.Log("Usuario no encontrado en la API.", LogLevel.Info);
+                    Monitor.Log("Credenciales incorrectas.", LogLevel.Info);
                     return 0; // Usuario no encontrado
                 }
             }
             catch (Exception ex)
             {
-                Monitor.Log($"Error al consultar la API: {ex.Message}", LogLevel.Error);
+                Monitor.Log($"Error al intentar hacer login: {ex.Message}", LogLevel.Error);
                 return 0; // Error durante la llamada a la API
             }
         }
 
         public async void SaveUserBgames(string email)
         {
-            string apiUrl = $"http://localhost:3010/player_by_email/{email}";
+            string apiUrl = $"{Auth}/login";
             try
             {
                 HttpResponseMessage response = await httpClient.GetAsync(apiUrl);
                 string jsonResponse = await response.Content.ReadAsStringAsync();
-                UserBgamesModel userFromApi = JsonConvert.DeserializeObject<UserBgamesModel>(jsonResponse);
+                LoginResponse userFromApi = JsonConvert.DeserializeObject<LoginResponse>(jsonResponse);
 
                 if (response.IsSuccessStatusCode && userFromApi != null)
                 {
+                    LoginResponse.AccessToken = userFromApi.AccessToken;
+                    LoginResponse.TokenType = userFromApi.TokenType;
                     // Actualiza la instancia original
-                    UserBgamesModel.Name = userFromApi.Name;
-                    UserBgamesModel.Email = userFromApi.Email;
-                    UserBgamesModel.Password = userFromApi.Password;
-                    UserBgamesModel.Id_players = userFromApi.Id_players;
-                    UserBgamesModel.Age = userFromApi.Age;
-                    Monitor.Log($"Usuario {userFromApi.Name} guardado correctamente.", LogLevel.Info);
+                    // UserBgamesModel.Name = userFromApi.Name;
+                    // UserBgamesModel.Email = userFromApi.Email;
+                    // UserBgamesModel.Password = userFromApi.Password;
+                    // UserBgamesModel.Id_players = userFromApi.Id_players;
+                    // UserBgamesModel.Age = userFromApi.Age;
+                    // Monitor.Log($"Usuario {userFromApi.Name} guardado correctamente.", LogLevel.Info);
 
                     // Guarda los puntos del jugador en el objeto UserBgamesModel
-                    SaveUserPoints(int.Parse(userFromApi.Id_players));
-                    SaveCredentials(userFromApi.Email, userFromApi.Password);
+                    // SaveUserPoints(int.Parse(userFromApi.Id_players));
+                    // SaveCredentials(userFromApi.Email, userFromApi.Password);
                 }
                 else
                 {
@@ -160,7 +173,7 @@ namespace bGamesPointsMod.Controllers
 
         public async void SaveUserPoints(int idPlayer)
         {
-            string apiUrl = $"http://localhost:3001/player_all_attributes/{idPlayer}";
+            string apiUrl = $"{Core}/player_all_attributes/{idPlayer}";
             try
             {
                 HttpResponseMessage response = await httpClient.GetAsync(apiUrl);
@@ -251,7 +264,7 @@ namespace bGamesPointsMod.Controllers
                     {
                         // Realizar la solicitud PUT
                         HttpResponseMessage response =
-                            await httpClient.PutAsync("http://localhost:3002/player_attributes_single", content);
+                            await httpClient.PutAsync($"{Core}/player_attributes_single", content);
 
                         // Verificar la respuesta
                         if (response.IsSuccessStatusCode)
@@ -279,7 +292,7 @@ namespace bGamesPointsMod.Controllers
         {
             try
             {
-                var response = await httpClient.GetAsync("http://localhost:8012/health");
+                var response = await httpClient.GetAsync($"{Core}/health");
                 if (!response.IsSuccessStatusCode)
                 {
                     Monitor.Log(
