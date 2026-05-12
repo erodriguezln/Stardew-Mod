@@ -23,7 +23,7 @@ namespace bGamesPointsMod
         public LevelUpModel fishingSkill;
         public LevelUpModel combatSkill;
         public LevelUpModel luckSkill;
-        int CheckConnection;
+        bool CheckConnection;
 
         // Controlador de Buffs
         public BuffController buffController;
@@ -137,7 +137,7 @@ namespace bGamesPointsMod
             //helper.Events.Input.ButtonPressed += OnButtonPressedLogin;
         }
         private async void OnDayStarted(object sender, DayStartedEventArgs e) {
-            CheckConnection = await userController.CheckConnectionBgames();
+            CheckConnection = await userController.CheckConnectionLsg();
 
             // Verifica si el jugador tiene un pico equipado
             if (Game1.player.CurrentTool is Pickaxe pickaxe) {
@@ -145,7 +145,7 @@ namespace bGamesPointsMod
                 pickaxe.AnimationSpeedModifier = 1.0f;
                 this.Monitor.Log("Nuevo día: Se restauró la velocidad de animación del pico a 1.0.", LogLevel.Info);
             }
-            if (CheckConnection == 1) {
+            if (CheckConnection) {
                 this.Monitor.Log("Conexion extablecida!", LogLevel.Info);
                 if (userController.CredentialsFileExists()) {
                     this.Monitor.Log("Ya existe un usario!", LogLevel.Info);
@@ -159,12 +159,12 @@ namespace bGamesPointsMod
             }
         }
         private async void OnButtonPressed(object? sender, ButtonPressedEventArgs e) {
-            CheckConnection = await userController.CheckConnectionBgames();
+            CheckConnection = await userController.CheckConnectionLsg();
 
             if (!Context.IsWorldReady) return;
 
             if (e.Button == SButton.MouseLeft && bBMenuMod.Contains(Game1.getMouseX(), Game1.getMouseY())) {
-                if (CheckConnection == 1) {
+                if (CheckConnection) {
                     this.Monitor.Log("Conexion extablecida!", LogLevel.Info);
                     if (userController.CredentialsFileExists()) {
                         userController.LoadCredentials(); // Carga las credenciales guardadas en el json y las asigna al modelo bGames
