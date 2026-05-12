@@ -131,7 +131,7 @@ namespace bGamesPointsMod.Views
             }
         }
 
-        
+
 
         public override void receiveLeftClick(int x, int y, bool playSound = true) {
             base.receiveLeftClick(x, y, playSound);
@@ -154,10 +154,10 @@ namespace bGamesPointsMod.Views
             }
         }
 
-        private async void PerformLogin() {
+        private async void PerformLogin()
+        {
             string email = emailTextBox.Text;
             string password = passwordTextBox.Text;
-
             if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
             {
                 Game1.addHUDMessage(new HUDMessage("Debes completar correo y contraseña.", 2));
@@ -165,12 +165,18 @@ namespace bGamesPointsMod.Views
             }
 
             var loginResult = await userController.UserCheck(email, password);
+            if (loginResult)
+            {
+                var saveSession = await userController.SaveSession();
+                if (!saveSession)
+                {
+                    Game1.addHUDMessage(new HUDMessage("Error saving session!", 2));
+                }
 
-            if (loginResult) {
-                userController.SaveUserBgames(email);
                 Game1.addHUDMessage(new HUDMessage("Login successful!", 2));
             }
-            else {
+            else
+            {
                 Game1.addHUDMessage(new HUDMessage("Error logging in, the password or email is incorrect!", 2));
             }
         }

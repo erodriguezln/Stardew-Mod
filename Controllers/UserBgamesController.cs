@@ -1,5 +1,6 @@
 ﻿using StardewModdingAPI;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using Newtonsoft.Json; // Necesitarás instalar este paquete para trabajar con JSON.
 using bGamesPointsMod.Models;
@@ -21,8 +22,9 @@ namespace bGamesPointsMod.Controllers
         public UserBgamesModel UserBgamesModel { get; private set; }
         public PointsBgamesModel PointsBgamesModel { get; private set; }
 
-        public LoginResponse LoginResponse { get; private set; }
-        public TokenModel TokenModel { get; private set; }
+        public LoginResponse? LoginResponse { get; private set; }
+        public TokenModel? TokenModel { get; private set; }
+        public SaveSessionModel? SavedSession { get; private set; }
 
         public UserBgamesController(
             IMonitor monitor,
@@ -40,7 +42,7 @@ namespace bGamesPointsMod.Controllers
 
         public async Task<bool> UserCheck(string email, string password)
         {
-            string apiUrl = $"{Auth}/login";
+            const string apiUrl = $"{Auth}/login";
             try
             {
                 var content = new FormUrlEncodedContent(new[]
@@ -49,61 +51,65 @@ namespace bGamesPointsMod.Controllers
                     new KeyValuePair<string, string>("password", password)
                 });
 
-                HttpResponseMessage response = await httpClient.PostAsync(apiUrl, content);
-                string jsonResponse = await response.Content.ReadAsStringAsync();
+                using var response = await httpClient.PostAsync(apiUrl, content);
+                var jsonResponse = await response.Content.ReadAsStringAsync();
                 var userFromApi = JsonConvert.DeserializeObject<LoginResponse>(jsonResponse);
 
-                if (response.IsSuccessStatusCode)
+                if (response.IsSuccessStatusCode && userFromApi != null &&
+                    !string.IsNullOrEmpty(userFromApi.AccessToken))
                 {
-                    Monitor.Log($"AccessToken: {userFromApi?.AccessToken}", LogLevel.Info);
-                    return true; // Usuario encontrado
+                    // Guarda el token de acceso en la propiedad de la clase
+                    LoginResponse = userFromApi;
+
+                    Monitor.Log($"[UserBgamesController] AccessToken: {userFromApi?.AccessToken}", LogLevel.Info);
+                    return true;
                 }
-                else
-                {
-                    Monitor.Log("Credenciales incorrectas.", LogLevel.Info);
-                    return false; // Usuario no encontrado
-                }
+
+                Monitor.Log("[UserBgamesController] Credenciales incorrectas.", LogLevel.Info);
+                return false;
             }
             catch (Exception ex)
             {
-                Monitor.Log($"Error al intentar hacer login: {ex.Message}", LogLevel.Error);
+                Monitor.Log($"[UserBgamesController] Error al intentar hacer login: {ex.Message}", LogLevel.Error);
                 return false; // Error durante la llamada a la API
             }
         }
 
-        public async void SaveUserBgames(string email)
+        public async Task<bool> SaveSession()
         {
-            string loginUrl = $"{Auth}/login";
-            var tokenRemainingUrl = $"{Auth}/token/remaining";
+            const string apiUrl = $"{Auth}/token/remaining";
             try
             {
-                HttpResponseMessage response = await httpClient.GetAsync(loginUrl);
-                string jsonResponse = await response.Content.ReadAsStringAsync();
-                LoginResponse userFromApi = JsonConvert.DeserializeObject<LoginResponse>(jsonResponse);
-
-                if (response.IsSuccessStatusCode && userFromApi != null)
+                if (LoginResponse == null || string.IsNullOrWhiteSpace(LoginResponse.AccessToken))
                 {
-                    LoginResponse.AccessToken = userFromApi.AccessToken;
-                    LoginResponse.TokenType = userFromApi.TokenType;
+                    Monitor.Log("[UserBgamesController] No se puede guardar la sesión porque no hay un token de acceso válido.",
+                        LogLevel.Warn);
+                    return false;
+                }
 
-                    HttpResponseMessage tokenResponse = await httpClient.GetAsync(tokenRemainingUrl);
-                    string tokenJsonResponse = await tokenResponse.Content.ReadAsStringAsync();
-                    TokenModel tokenInfo = JsonConvert.DeserializeObject<TokenModel>(tokenJsonResponse);
+                using var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", LoginResponse.AccessToken);
 
-                    TokenModel.ExpiresAt = tokenInfo.ExpiresAt;
+                using var response = await httpClient.SendAsync(request);
+                var jsonResponse = await response.Content.ReadAsStringAsync();
+                var tokenInfo = JsonConvert.DeserializeObject<TokenModel>(jsonResponse);
 
-                    // Guarda los puntos del jugador en el objeto UserBgamesModel
-                    // SaveUserPoints(int.Parse(userFromApi.Id_players));
+                if (response.IsSuccessStatusCode && tokenInfo != null)
+                {
+                    TokenModel = tokenInfo;
                     SaveCredentials(LoginResponse.AccessToken, TokenModel.ExpiresAt);
+                    Monitor.Log("[UserBgamesController] Sesión guardada exitosamente.", LogLevel.Info);
+                    return true;
                 }
-                else
-                {
-                    Monitor.Log("No se pudo guardar el usuario porque no hay datos disponibles.", LogLevel.Warn);
-                }
+
+                Monitor.Log($"[UserBgamesController] No se pudo guardar la sesion. Status: {response.StatusCode}. Body: {jsonResponse}",
+                    LogLevel.Warn);
+                return false;
             }
             catch (Exception ex)
             {
-                Monitor.Log($"Error al guardar el usuario: {ex.Message}", LogLevel.Error);
+                Monitor.Log($"[UserBgamesController] Error al guardar la sesion: {ex.Message}", LogLevel.Error);
+                return false;
             }
         }
 
@@ -112,18 +118,26 @@ namespace bGamesPointsMod.Controllers
             return File.Exists(this.credentialsFilePath);
         }
 
-        // Esta funcion guarda el access_token en un archivo JSON y al moment ode cargar dichos datos ocupa la de usercheck
-        public void SaveCredentials(string accessToken, DateTime expiresAt)
+        // Guardar credenciales en un archivo JSON
+        private void SaveCredentials(string accessToken, DateTime expiresAt)
         {
             try
             {
-                string jsonContent = $"{accessToken}";
-                File.WriteAllText(this.credentialsFilePath, jsonContent);
-                this.Monitor.Log("Access Token guardado exitosamente.", LogLevel.Info);
+                SavedSession = new SaveSessionModel
+                {
+                    AccessToken = accessToken,
+                    ExpiresAt = expiresAt.ToUniversalTime() // Guardar en UTC para evitar problemas de zona horaria
+                };
+
+
+                // Serializar el objeto a JSON
+                var jsonContent = JsonConvert.SerializeObject(SavedSession, Formatting.Indented);
+                File.WriteAllText(credentialsFilePath, jsonContent);
+                Monitor.Log("Credenciales guardadas exitosamente.", LogLevel.Info);
             }
             catch (Exception ex)
             {
-                this.Monitor.Log($"Error al guardar Access Token: {ex.Message}", LogLevel.Error);
+                Monitor.Log($"Error al guardar la credenciales: {ex.Message}", LogLevel.Error);
             }
         }
 
@@ -147,14 +161,7 @@ namespace bGamesPointsMod.Controllers
 
                 this.Monitor.Log($"Credenciales cargadas: Usuario: {accessToken}", LogLevel.Info);
 
-                // Usar await para obtener el resultado de UserCheck
-                int userCheckResult = await UserCheck(username, password);
-
-                if (userCheckResult)
-                {
-                    SaveUserBgames(username);
-                    return 1;
-                }
+                // TODO: Si no existe el archivo forzar login.
 
                 return 0; // Credenciales incorrectas
             }
