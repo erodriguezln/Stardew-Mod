@@ -1,31 +1,22 @@
-using bGamesPointsMod.Models;
+using Newtonsoft.Json;
+
 namespace bGamesPointsMod.Models
 {
     public class UserBgamesModel
     {
-        public string Name { get; set; }              // Nombre del buff
-        
-        public string Email { get; set; }             // Email del usuario
+        [JsonProperty("id_players")]
+        public int IdPlayers { get; set; }
 
-        public string Password { get; set; }          // Contraseña del usuario
-        
-        public string Id_players { get; set; }
+        [JsonProperty("name")]
+        public string Name { get; set; } = string.Empty;
 
-        public string Age { get; set; }
+        [JsonProperty("email")]
+        public string Email { get; set; } = string.Empty;
 
-        public List<PointsBgamesModel> Points { get; set; } // Lista de puntos
+        [JsonProperty("age")]
+        public int Age { get; set; }
 
-
-        // Constructor para inicializar el buff
-        public UserBgamesModel(string name, string email, string password, string id_players
-            ,string age, List<PointsBgamesModel> points)
-        {
-            Name = name;
-            Email = email;
-            Password = password;
-            Id_players = id_players;
-            Age = age;
-            Points = points ?? new List<PointsBgamesModel>();
-        }
+        [JsonProperty("roles")]
+        public List<string> Roles { get; set; } = new();
     }
 }

@@ -1,23 +1,31 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using Newtonsoft.Json;
 
 namespace bGamesPointsMod.Models
 {
     public class PointsBgamesModel
     {
-        public string Id_attributes { get; set; }
-        public string Name { get; set; }
+        [JsonProperty("id_players")]
+        public int Id_players { get; set; }
 
-        public string Data { get; set; }
+        [JsonProperty("player_name")]
+        public string PlayerName { get; set; } = string.Empty;
 
-        public PointsBgamesModel(string id_attributes, string name, string data)
-        {
-            Id_attributes = id_attributes;
-            Name = name;
-            Data = data;
-        }
+        [JsonProperty("player_email")]
+        public string PlayerEmail { get; set; } = string.Empty;
+
+        [JsonProperty("id_attributes")]
+        public int Id_attributes { get; set; }
+
+        [JsonProperty("attribute_name")]
+        public string AttributeName { get; set; } = string.Empty;
+
+        [JsonProperty("balance_ledger")]
+        public int BalanceLedger { get; set; }
+
+        [JsonProperty("snapshot_points")]
+        public int SnapshotPoints { get; set; }
+
+        [JsonProperty("diff_ledger_minus_snapshot")]
+        public int DiffLedgerMinusSnapshot { get; set; }
     }
 }
