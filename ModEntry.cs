@@ -165,7 +165,7 @@ namespace bGamesPointsMod
                 if (CheckConnection) {
                     this.Monitor.Log("Conexion extablecida!", LogLevel.Info);
                     if (userController.CredentialsFileExists()) {
-                        userController.LoadCredentials(); // Carga las credenciales guardadas en el json y las asigna al modelo bGames
+                        await userController.LoadCredentials(); // Carga las credenciales guardadas en el json y las asigna al modelo bGames
                         this.Monitor.Log("Ya existe un usario!", LogLevel.Info);
                         Game1.addHUDMessage(new HUDMessage("Conexion con bGames establecida!", 2));
                         Monitor.Log("Botón de menú clickeado.", LogLevel.Info);

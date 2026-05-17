@@ -119,6 +119,12 @@ namespace bGamesPointsMod.Controllers
         public void ToggleMenu() {
             isMenuVisible = !isMenuVisible;
             Game1.activeClickableMenu = isMenuVisible ? this : null;
+
+            if (isMenuVisible)
+            {
+                var userPoints = userBgamesController.GetUserPoints();
+                Monitor.Log($"[MenuModView] Menu abierto. user_points_count={userPoints.Count}, user_name='{userBgamesModel.Name}', user_email='{userBgamesModel.Email}', user_age={userBgamesModel.Age}", LogLevel.Debug);
+            }
         }
 
         public void RenderMenu(SpriteBatch spriteBatch)

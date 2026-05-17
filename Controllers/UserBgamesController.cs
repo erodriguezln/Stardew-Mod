@@ -95,8 +95,22 @@ namespace bGamesPointsMod.Controllers
                 if (response.IsSuccessStatusCode && tokenInfo != null)
                 {
                     TokenModel = tokenInfo;
-                    SaveCredentials(LoginResponse.AccessToken, TokenModel.ExpiresAt);
+                    if (tokenInfo.PlayerId.HasValue)
+                    {
+                        UserBgamesModel.IdPlayers = tokenInfo.PlayerId.Value;
+                    }
+
+                    Monitor.Log($"[UserBgamesController] token/remaining ok. player_id={TokenModel.PlayerId}, expires_at={TokenModel.ExpiresAt:O}", LogLevel.Debug);
+
+                    SaveCredentials(LoginResponse.AccessToken, TokenModel.ExpiresAt, TokenModel.PlayerId);
                     Monitor.Log("[UserBgamesController] Sesión guardada exitosamente.", LogLevel.Info);
+
+                    if (UserBgamesModel.IdPlayers > 0)
+                    {
+                        Monitor.Log($"[UserBgamesController] Cargando puntos tras guardar sesión para player_id={UserBgamesModel.IdPlayers}.", LogLevel.Debug);
+                        await SaveUserPoints(UserBgamesModel.IdPlayers);
+                    }
+
                     return true;
                 }
 
@@ -117,14 +131,15 @@ namespace bGamesPointsMod.Controllers
         }
 
         // Guardar credenciales en un archivo JSON
-        private void SaveCredentials(string accessToken, DateTime expiresAt)
+        private void SaveCredentials(string accessToken, DateTime expiresAt, int? playerId)
         {
             try
             {
                 SavedSession = new SaveSessionModel
                 {
                     AccessToken = accessToken,
-                    ExpiresAt = expiresAt.ToUniversalTime() // Guardar en UTC para evitar problemas de zona horaria
+                    ExpiresAt = expiresAt.ToUniversalTime(), // Guardar en UTC para evitar problemas de zona horaria
+                    PlayerId = playerId
                 };
 
 
@@ -153,15 +168,35 @@ namespace bGamesPointsMod.Controllers
 
                 // Leer y deserializar las credenciales
                 string jsonContent = File.ReadAllText(this.credentialsFilePath);
-                var credentials = JsonConvert.DeserializeObject<dynamic>(jsonContent);
+                var credentials = JsonConvert.DeserializeObject<SaveSessionModel>(jsonContent);
 
-                string accessToken = credentials.accessToken;
+                if (credentials == null || string.IsNullOrWhiteSpace(credentials.AccessToken))
+                {
+                    this.Monitor.Log("Las credenciales guardadas no son validas.", LogLevel.Warn);
+                    return 0;
+                }
 
-                this.Monitor.Log($"Credenciales cargadas: Usuario: {accessToken}", LogLevel.Info);
+                SavedSession = credentials;
+                LoginResponse = new LoginResponse
+                {
+                    AccessToken = credentials.AccessToken,
+                    TokenType = "bearer"
+                };
 
-                // TODO: Si no existe el archivo forzar login.
+                if (credentials.PlayerId.HasValue)
+                {
+                    UserBgamesModel.IdPlayers = credentials.PlayerId.Value;
+                    this.Monitor.Log($"[UserBgamesController] Cargando puntos desde sesión guardada para player_id={credentials.PlayerId.Value}.", LogLevel.Debug);
+                    await SaveUserPoints(credentials.PlayerId.Value);
+                }
+                else
+                {
+                    this.Monitor.Log("[UserBgamesController] La sesión guardada no contiene player_id; no se pueden cargar puntos todavía.", LogLevel.Warn);
+                }
 
-                return 0; // Credenciales incorrectas
+                this.Monitor.Log($"Credenciales cargadas para player_id: {credentials.PlayerId}", LogLevel.Info);
+
+                return 1;
             }
             catch (Exception ex)
             {
@@ -170,31 +205,64 @@ namespace bGamesPointsMod.Controllers
             }
         }
 
-        public async void SaveUserPoints(int idPlayer)
+        public async Task SaveUserPoints(int idPlayer)
         {
-            string apiUrl = $"{Core}/player_all_attributes/{idPlayer}";
+            string? accessToken = GetAccessToken();
+            if (string.IsNullOrWhiteSpace(accessToken))
+            {
+                Monitor.Log("No se pueden cargar puntos sin token de acceso.", LogLevel.Warn);
+                return;
+            }
+
+            string apiUrl = $"{Core}/players/{idPlayer}/attributes/points";
             try
             {
-                HttpResponseMessage response = await httpClient.GetAsync(apiUrl);
+                Monitor.Log($"[UserBgamesController] Solicitando puntos a {apiUrl} para player_id={idPlayer}.", LogLevel.Debug);
+                using var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+                HttpResponseMessage response = await httpClient.SendAsync(request);
                 string jsonResponse = await response.Content.ReadAsStringAsync();
 
-                if (response.IsSuccessStatusCode && response != null)
+                Monitor.Log($"[UserBgamesController] Respuesta puntos status={(int)response.StatusCode}. body={jsonResponse}", LogLevel.Debug);
+
+                if (response.IsSuccessStatusCode)
                 {
                     List<PointsBgamesModel> pointsFromApi =
                         JsonConvert.DeserializeObject<List<PointsBgamesModel>>(jsonResponse);
                     UserPoints = pointsFromApi ?? new List<PointsBgamesModel>();
-                    Monitor.Log("Puntos del usuario guardados correctamente.", LogLevel.Info);
+                    Monitor.Log($"[UserBgamesController] Puntos cargados correctamente. total={UserPoints.Count}", LogLevel.Info);
+
+                    foreach (var points in UserPoints)
+                    {
+                        Monitor.Log($"[UserBgamesController] Punto -> attr_id={points.Id_attributes}, attr={points.AttributeName}, snapshot={points.SnapshotPoints}, ledger={points.BalanceLedger}, diff={points.DiffLedgerMinusSnapshot}", LogLevel.Debug);
+                    }
                 }
                 else
                 {
-                    Monitor.Log("No se pudo guardar el puntaje del usuario porque no hay datos disponibles.",
+                    Monitor.Log("No se pudo cargar el puntaje del usuario porque no hay datos disponibles.",
                         LogLevel.Warn);
                 }
             }
             catch (Exception ex)
             {
-                Monitor.Log($"Error al guardar los puntos: {ex.Message}", LogLevel.Error);
+                Monitor.Log($"Error al cargar los puntos: {ex.Message}", LogLevel.Error);
             }
+        }
+
+        private string? GetAccessToken()
+        {
+            if (!string.IsNullOrWhiteSpace(LoginResponse?.AccessToken))
+            {
+                return LoginResponse.AccessToken;
+            }
+
+            if (!string.IsNullOrWhiteSpace(SavedSession?.AccessToken))
+            {
+                return SavedSession.AccessToken;
+            }
+
+            return null;
         }
 
         public UserBgamesModel GetUser()
