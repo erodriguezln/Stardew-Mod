@@ -20,7 +20,7 @@ namespace bGamesPointsMod.Controllers
 
 
         public UserBgamesModel UserBgamesModel { get; private set; }
-        public PointsBgamesModel PointsBgamesModel { get; private set; }
+        public List<PointsBgamesModel> UserPoints { get; private set; } = new();
 
         public LoginResponse? LoginResponse { get; private set; }
         public TokenModel? TokenModel { get; private set; }
@@ -29,13 +29,11 @@ namespace bGamesPointsMod.Controllers
         public UserBgamesController(
             IMonitor monitor,
             IModHelper helper,
-            UserBgamesModel userBgamesModel,
-            PointsBgamesModel pointsBgamesModel)
+            UserBgamesModel userBgamesModel)
         {
             this.Monitor = monitor;
             this.Helper = helper;
             this.UserBgamesModel = userBgamesModel; // Usa la instancia original pasada
-            this.PointsBgamesModel = pointsBgamesModel;
             this.httpClient = new HttpClient(); // Inicializa el cliente HTTP
             this.credentialsFilePath = Path.Combine(helper.DirectoryPath, "users.json");
         }
@@ -184,7 +182,7 @@ namespace bGamesPointsMod.Controllers
                 {
                     List<PointsBgamesModel> pointsFromApi =
                         JsonConvert.DeserializeObject<List<PointsBgamesModel>>(jsonResponse);
-                    UserBgamesModel.Points = pointsFromApi; // Actualiza la lista de puntos en la instancia original
+                    UserPoints = pointsFromApi ?? new List<PointsBgamesModel>();
                     Monitor.Log("Puntos del usuario guardados correctamente.", LogLevel.Info);
                 }
                 else
@@ -204,23 +202,27 @@ namespace bGamesPointsMod.Controllers
             return UserBgamesModel;
         }
 
+        public IReadOnlyList<PointsBgamesModel> GetUserPoints()
+        {
+            return UserPoints;
+        }
+
         // funcion para gastar puntos en las habilidades
         public int SpendPoints(int spendPoints)
         {
             //Cada habilidad va a costar 5 puntos bGames o mas
             int i = spendPoints;
-            if (UserBgamesModel.Points != null)
+            if (UserPoints.Count > 0)
             {
                 while (i > 0)
                 {
-                    foreach (var points in UserBgamesModel.Points)
+                    foreach (var points in UserPoints)
                     {
                         // recorre el puntaje de cada tributo
-                        if (0 < Int32.Parse(points.Data) && spendPoints > 0)
+                        if (points.SnapshotPoints > 0 && spendPoints > 0)
                         {
                             spendPoints--; //le se resta uno a los puntos a gastar
-                            points.Data =
-                                (Int32.Parse(points.Data) - 1).ToString(); // tambien resto uno a los puntos ctuales
+                            points.SnapshotPoints -= 1; // tambien resto uno a los puntos actuales
                         }
                     }
 
@@ -245,16 +247,16 @@ namespace bGamesPointsMod.Controllers
         {
             try
             {
-                string userId = UserBgamesModel.Id_players;
+                int userId = UserBgamesModel.IdPlayers;
 
-                foreach (var points in UserBgamesModel.Points)
+                foreach (var points in UserPoints)
                 {
                     // Crear el cuerpo del JSON
                     var payload = new
                     {
                         id_player = userId,
                         id_attributes = points.Id_attributes,
-                        new_data = points.Data
+                        new_data = points.SnapshotPoints
                     };
 
                     // Serializar el JSON
@@ -270,13 +272,13 @@ namespace bGamesPointsMod.Controllers
                         // Verificar la respuesta
                         if (response.IsSuccessStatusCode)
                         {
-                            Monitor.Log($"Puntos actualizados correctamente: {points.Name} ({points.Data})",
+                            Monitor.Log($"Puntos actualizados correctamente: {points.AttributeName} ({points.SnapshotPoints})",
                                 LogLevel.Info);
                         }
                         else
                         {
                             string error = await response.Content.ReadAsStringAsync();
-                            Monitor.Log($"Error al actualizar los puntos para {points.Name}: {error}", LogLevel.Error);
+                            Monitor.Log($"Error al actualizar los puntos para {points.AttributeName}: {error}", LogLevel.Error);
                         }
                     }
                 }

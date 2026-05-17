@@ -17,7 +17,6 @@ namespace bGamesPointsMod
     {
         // Modelos de Buffs
         public UserBgamesModel userBgamesModel;
-        public PointsBgamesModel pointsBgamesModel;
         public LevelUpModel miningSkill;
         public LevelUpModel foraningSkill;
         public LevelUpModel fishingSkill;
@@ -108,8 +107,7 @@ namespace bGamesPointsMod
             bBMenuMod = new Rectangle(10, 10, 40, 40);
 
             // Crear instancia de BuffController
-            pointsBgamesModel = new PointsBgamesModel("", "", "");
-            userBgamesModel = new UserBgamesModel("","","","","", null);
+            userBgamesModel = new UserBgamesModel();
             buffController = new BuffController(
                 this.Monitor, 
                 this.Helper, 
@@ -120,7 +118,7 @@ namespace bGamesPointsMod
                 luckLevelBuff,
                 fishingBuff,
                 farmingBuff);
-            userController = new UserBgamesController(this.Monitor, helper, userBgamesModel, pointsBgamesModel);
+            userController = new UserBgamesController(this.Monitor, helper, userBgamesModel);
 
             // Crear instancia de LevelUpController
             levelUpController = new LevelUpController(this.Monitor, this.Helper, miningSkill, foraningSkill, fishingSkill, combatSkill, luckSkill);
