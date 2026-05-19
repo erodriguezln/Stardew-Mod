@@ -9,7 +9,6 @@ using StardewValley.Tools;
 using bGamesPointsMod.Models;
 using Microsoft.Xna.Framework.Content;
 using StardewValley.Buffs;
-using bGamesPointsMod.Buffs;
 using System.Security.Cryptography.X509Certificates;
 using bGamesPointsMod.Controllers;
 
