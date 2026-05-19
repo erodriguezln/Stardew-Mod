@@ -7,13 +7,13 @@ using StardewValley;
 using StardewValley.Menus;
 using StardewValley.Tools;
 using bGamesPointsMod.Models;
-using bGamesPointsMod.Views;
 using Microsoft.Xna.Framework.Content;
 using StardewValley.Buffs;
 using bGamesPointsMod.Buffs;
 using System.Security.Cryptography.X509Certificates;
+using bGamesPointsMod.Controllers;
 
-namespace bGamesPointsMod.Controllers
+namespace bGamesPointsMod.Views
 {
     public class MenuSkillsView : IClickableMenu
     {

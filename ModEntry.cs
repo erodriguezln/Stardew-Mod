@@ -8,8 +8,8 @@ using StardewValley.Tools;
 using bGamesPointsMod.Models;
 using bGamesPointsMod.Controllers;
 using Microsoft.Xna.Framework.Graphics;
-using bGamesPointsMod.Views;
 using StardewValley.Buffs;
+using bGamesPointsMod.Views;
 
 namespace bGamesPointsMod
 {
@@ -144,16 +144,19 @@ namespace bGamesPointsMod
                 this.Monitor.Log("Nuevo día: Se restauró la velocidad de animación del pico a 1.0.", LogLevel.Info);
             }
             if (CheckConnection) {
-                this.Monitor.Log("Conexion extablecida!", LogLevel.Info);
-                if (userController.CredentialsFileExists()) {
-                    this.Monitor.Log("Ya existe un usario!", LogLevel.Info);
+                this.Monitor.Log("Conexion con lsg-client establecida!", LogLevel.Info);
+
+                bool hasSession = await userController.TryLoadCurrentSession();
+                if (hasSession) {
+                    this.Monitor.Log($"Sesion detectada en lsg-client para player_id={userBgamesModel.IdPlayers}.", LogLevel.Info);
                 }
                 else {
-                    this.Monitor.Log("No existe un usario!", LogLevel.Info);
+                    this.Monitor.Log("lsg-client esta activo pero no hay sesion iniciada.", LogLevel.Info);
                 }
             }
             else {
-                this.Monitor.Log("Sin conexion con bGames!", LogLevel.Info);
+                userController.ClearCurrentUserState();
+                this.Monitor.Log("Sin conexion con lsg-client!", LogLevel.Info);
             }
         }
         private async void OnButtonPressed(object? sender, ButtonPressedEventArgs e) {
@@ -163,26 +166,24 @@ namespace bGamesPointsMod
 
             if (e.Button == SButton.MouseLeft && bBMenuMod.Contains(Game1.getMouseX(), Game1.getMouseY())) {
                 if (CheckConnection) {
-                    this.Monitor.Log("Conexion extablecida!", LogLevel.Info);
-                    if (userController.CredentialsFileExists()) {
-                        await userController.LoadCredentials(); // Carga las credenciales guardadas en el json y las asigna al modelo bGames
-                        this.Monitor.Log("Ya existe un usario!", LogLevel.Info);
-                        Game1.addHUDMessage(new HUDMessage("Conexion con bGames establecida!", 2));
-                        Monitor.Log("Botón de menú clickeado.", LogLevel.Info);
+                    this.Monitor.Log("Conexion con lsg-client establecida!", LogLevel.Info);
+
+                    bool hasSession = await userController.TryLoadCurrentSession();
+                    if (hasSession) {
+                        Game1.addHUDMessage(new HUDMessage("LSG Client session loaded!", 2));
+                        Monitor.Log("Boton de menu clickeado.", LogLevel.Info);
                         menu.ToggleMenu();
                     }
                     else {
-                        // Solo muestra LoginView en pantalla cuando no existe un jugador
-                        OnButtonPressedLogin(sender, e);
-                        this.Monitor.Log("No existe un usario!", LogLevel.Info);
+                        Game1.addHUDMessage(new HUDMessage("Sign in from LSG Client first!", 2));
+                        this.Monitor.Log("No hay sesion activa en lsg-client.", LogLevel.Info);
                     }
                 }
                 else {
-                    this.Monitor.Log("Sin conexion con bGames!", LogLevel.Info);
-                    //Game1.addHUDMessage(new HUDMessage("Sin conexion con bGames!", 2));
-                    //Game1.addHUDMessage(new HUDMessage("Inicia los servicios de bGames para continuar!", 2));
-                    Game1.addHUDMessage(new HUDMessage("No connection with bGames!", 2));
-                    Game1.addHUDMessage(new HUDMessage("Start the bGames services to continue!", 2));
+                    userController.ClearCurrentUserState();
+                    this.Monitor.Log("Sin conexion con lsg-client!", LogLevel.Info);
+                    Game1.addHUDMessage(new HUDMessage("No connection with LSG Client!", 2));
+                    Game1.addHUDMessage(new HUDMessage("Start lsg-client to continue!", 2));
 
                 }
             }
@@ -195,10 +196,6 @@ namespace bGamesPointsMod
 
             spriteBatch.Draw(bTMenuMod, bBMenuMod, Color.White);
             menu.RenderMenu(spriteBatch);
-        }
-        private void OnButtonPressedLogin(object sender, ButtonPressedEventArgs e) {
-            // Solo muestra LoginView en pantalla cuando no existe un jugador
-            Game1.activeClickableMenu = new LoginView(userController, this.Monitor, this.Helper);
         }
     }
 }

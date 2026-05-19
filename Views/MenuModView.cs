@@ -9,7 +9,9 @@ using StardewValley.Tools;
 using bGamesPointsMod.Models;
 using System.Threading;
 
-namespace bGamesPointsMod.Controllers
+using bGamesPointsMod.Controllers;
+
+namespace bGamesPointsMod.Views
 {
     public class MenuModView : IClickableMenu
     {

@@ -1,8 +1,8 @@
-﻿using StardewModdingAPI;
+using StardewModdingAPI;
+using System.Net;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Threading.Tasks;
-using Newtonsoft.Json; // Necesitarás instalar este paquete para trabajar con JSON.
+using Newtonsoft.Json;
 using bGamesPointsMod.Models;
 using System.Text;
 
@@ -10,21 +10,14 @@ namespace bGamesPointsMod.Controllers
 {
     public class UserBgamesController
     {
-        private const string Auth = "http://localhost:8001";
-        private const string Core = "http://localhost:8012";
+        private const string LocalApi = "http://localhost:3333";
 
         private readonly IMonitor Monitor;
-        private readonly IModHelper Helper;
-        private readonly HttpClient httpClient; // Cliente HTTP para hacer las peticiones a la API externa
-        private readonly string credentialsFilePath; // Ruta de acceso al archivo de credenciales
+        private readonly HttpClient httpClient;
 
 
         public UserBgamesModel UserBgamesModel { get; private set; }
         public List<PointsBgamesModel> UserPoints { get; private set; } = new();
-
-        public LoginResponse? LoginResponse { get; private set; }
-        public TokenModel? TokenModel { get; private set; }
-        public SaveSessionModel? SavedSession { get; private set; }
 
         public UserBgamesController(
             IMonitor monitor,
@@ -32,203 +25,66 @@ namespace bGamesPointsMod.Controllers
             UserBgamesModel userBgamesModel)
         {
             this.Monitor = monitor;
-            this.Helper = helper;
-            this.UserBgamesModel = userBgamesModel; // Usa la instancia original pasada
-            this.httpClient = new HttpClient(); // Inicializa el cliente HTTP
-            this.credentialsFilePath = Path.Combine(helper.DirectoryPath, "users.json");
+            this.UserBgamesModel = userBgamesModel;
+            this.httpClient = new HttpClient();
         }
 
-        public async Task<bool> UserCheck(string email, string password)
+        public async Task<bool> TryLoadCurrentSession()
         {
-            const string apiUrl = $"{Auth}/login";
             try
             {
-                var content = new FormUrlEncodedContent(new[]
+                ClearCurrentUserState();
+
+                string whoAmIUrl = $"{LocalApi}/whoami";
+                using var response = await httpClient.GetAsync(whoAmIUrl);
+                string jsonResponse = await response.Content.ReadAsStringAsync();
+
+                if (response.StatusCode == HttpStatusCode.Unauthorized)
                 {
-                    new KeyValuePair<string, string>("username", email),
-                    new KeyValuePair<string, string>("password", password)
-                });
-
-                using var response = await httpClient.PostAsync(apiUrl, content);
-                var jsonResponse = await response.Content.ReadAsStringAsync();
-                var userFromApi = JsonConvert.DeserializeObject<LoginResponse>(jsonResponse);
-
-                if (response.IsSuccessStatusCode && userFromApi != null &&
-                    !string.IsNullOrEmpty(userFromApi.AccessToken))
-                {
-                    // Guarda el token de acceso en la propiedad de la clase
-                    LoginResponse = userFromApi;
-
-                    Monitor.Log($"[UserBgamesController] AccessToken: {userFromApi?.AccessToken}", LogLevel.Info);
-                    return true;
-                }
-
-                Monitor.Log("[UserBgamesController] Credenciales incorrectas.", LogLevel.Info);
-                return false;
-            }
-            catch (Exception ex)
-            {
-                Monitor.Log($"[UserBgamesController] Error al intentar hacer login: {ex.Message}", LogLevel.Error);
-                return false; // Error durante la llamada a la API
-            }
-        }
-
-        public async Task<bool> SaveSession()
-        {
-            const string apiUrl = $"{Auth}/token/remaining";
-            try
-            {
-                if (LoginResponse == null || string.IsNullOrWhiteSpace(LoginResponse.AccessToken))
-                {
-                    Monitor.Log("[UserBgamesController] No se puede guardar la sesión porque no hay un token de acceso válido.",
-                        LogLevel.Warn);
+                    Monitor.Log("[UserBgamesController] lsg-client esta activo pero no hay sesion autenticada.", LogLevel.Info);
                     return false;
                 }
 
-                using var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", LoginResponse.AccessToken);
-
-                using var response = await httpClient.SendAsync(request);
-                var jsonResponse = await response.Content.ReadAsStringAsync();
-                var tokenInfo = JsonConvert.DeserializeObject<TokenModel>(jsonResponse);
-
-                if (response.IsSuccessStatusCode && tokenInfo != null)
+                if (!response.IsSuccessStatusCode)
                 {
-                    TokenModel = tokenInfo;
-                    if (tokenInfo.PlayerId.HasValue)
-                    {
-                        UserBgamesModel.IdPlayers = tokenInfo.PlayerId.Value;
-                    }
-
-                    Monitor.Log($"[UserBgamesController] token/remaining ok. player_id={TokenModel.PlayerId}, expires_at={TokenModel.ExpiresAt:O}", LogLevel.Debug);
-
-                    SaveCredentials(LoginResponse.AccessToken, TokenModel.ExpiresAt, TokenModel.PlayerId);
-                    Monitor.Log("[UserBgamesController] Sesión guardada exitosamente.", LogLevel.Info);
-
-                    if (UserBgamesModel.IdPlayers > 0)
-                    {
-                        Monitor.Log($"[UserBgamesController] Cargando puntos tras guardar sesión para player_id={UserBgamesModel.IdPlayers}.", LogLevel.Debug);
-                        await SaveUserPoints(UserBgamesModel.IdPlayers);
-                    }
-
-                    return true;
+                    Monitor.Log($"[UserBgamesController] No se pudo cargar whoami. Status: {(int)response.StatusCode}. Body: {jsonResponse}", LogLevel.Warn);
+                    return false;
                 }
 
-                Monitor.Log($"[UserBgamesController] No se pudo guardar la sesion. Status: {response.StatusCode}. Body: {jsonResponse}",
-                    LogLevel.Warn);
+                var currentUser = JsonConvert.DeserializeObject<UserBgamesModel>(jsonResponse);
+                if (currentUser == null || currentUser.IdPlayers <= 0)
+                {
+                    Monitor.Log("[UserBgamesController] whoami respondio sin un player valido.", LogLevel.Warn);
+                    return false;
+                }
+
+                ApplyCurrentUser(currentUser);
+                await SaveUserPoints(currentUser.IdPlayers);
+
+                Monitor.Log($"[UserBgamesController] Sesion cargada desde lsg-client para player_id={currentUser.IdPlayers}.", LogLevel.Info);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[UserBgamesController] Error al cargar la sesion desde lsg-client: {ex.Message}", LogLevel.Error);
                 return false;
-            }
-            catch (Exception ex)
-            {
-                Monitor.Log($"[UserBgamesController] Error al guardar la sesion: {ex.Message}", LogLevel.Error);
-                return false;
-            }
-        }
-
-        public bool CredentialsFileExists()
-        {
-            return File.Exists(this.credentialsFilePath);
-        }
-
-        // Guardar credenciales en un archivo JSON
-        private void SaveCredentials(string accessToken, DateTime expiresAt, int? playerId)
-        {
-            try
-            {
-                SavedSession = new SaveSessionModel
-                {
-                    AccessToken = accessToken,
-                    ExpiresAt = expiresAt.ToUniversalTime(), // Guardar en UTC para evitar problemas de zona horaria
-                    PlayerId = playerId
-                };
-
-
-                // Serializar el objeto a JSON
-                var jsonContent = JsonConvert.SerializeObject(SavedSession, Formatting.Indented);
-                File.WriteAllText(credentialsFilePath, jsonContent);
-                Monitor.Log("Credenciales guardadas exitosamente.", LogLevel.Info);
-            }
-            catch (Exception ex)
-            {
-                Monitor.Log($"Error al guardar la credenciales: {ex.Message}", LogLevel.Error);
-            }
-        }
-
-        // Cargar credenciales desde el archivo
-        public async Task<int> LoadCredentials()
-        {
-            try
-            {
-                // Verificar si el archivo existe antes de leerlo
-                if (!CredentialsFileExists())
-                {
-                    this.Monitor.Log("No se encontraron credenciales para cargar.", LogLevel.Warn);
-                    return 0;
-                }
-
-                // Leer y deserializar las credenciales
-                string jsonContent = File.ReadAllText(this.credentialsFilePath);
-                var credentials = JsonConvert.DeserializeObject<SaveSessionModel>(jsonContent);
-
-                if (credentials == null || string.IsNullOrWhiteSpace(credentials.AccessToken))
-                {
-                    this.Monitor.Log("Las credenciales guardadas no son validas.", LogLevel.Warn);
-                    return 0;
-                }
-
-                SavedSession = credentials;
-                LoginResponse = new LoginResponse
-                {
-                    AccessToken = credentials.AccessToken,
-                    TokenType = "bearer"
-                };
-
-                if (credentials.PlayerId.HasValue)
-                {
-                    UserBgamesModel.IdPlayers = credentials.PlayerId.Value;
-                    this.Monitor.Log($"[UserBgamesController] Cargando puntos desde sesión guardada para player_id={credentials.PlayerId.Value}.", LogLevel.Debug);
-                    await SaveUserPoints(credentials.PlayerId.Value);
-                }
-                else
-                {
-                    this.Monitor.Log("[UserBgamesController] La sesión guardada no contiene player_id; no se pueden cargar puntos todavía.", LogLevel.Warn);
-                }
-
-                this.Monitor.Log($"Credenciales cargadas para player_id: {credentials.PlayerId}", LogLevel.Info);
-
-                return 1;
-            }
-            catch (Exception ex)
-            {
-                this.Monitor.Log($"Error al cargar las credenciales: {ex.Message}", LogLevel.Error);
-                return 0;
             }
         }
 
         public async Task SaveUserPoints(int idPlayer)
         {
-            string? accessToken = GetAccessToken();
-            if (string.IsNullOrWhiteSpace(accessToken))
-            {
-                Monitor.Log("No se pueden cargar puntos sin token de acceso.", LogLevel.Warn);
-                return;
-            }
-
-            string apiUrl = $"{Core}/players/{idPlayer}/attributes/points";
+            string apiUrl = $"{LocalApi}/players/{idPlayer}/attributes/points";
             try
             {
                 Monitor.Log($"[UserBgamesController] Solicitando puntos a {apiUrl} para player_id={idPlayer}.", LogLevel.Debug);
-                using var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-
-                HttpResponseMessage response = await httpClient.SendAsync(request);
+                HttpResponseMessage response = await httpClient.GetAsync(apiUrl);
                 string jsonResponse = await response.Content.ReadAsStringAsync();
 
                 Monitor.Log($"[UserBgamesController] Respuesta puntos status={(int)response.StatusCode}. body={jsonResponse}", LogLevel.Debug);
 
                 if (response.IsSuccessStatusCode)
                 {
-                    List<PointsBgamesModel> pointsFromApi =
+                    List<PointsBgamesModel>? pointsFromApi =
                         JsonConvert.DeserializeObject<List<PointsBgamesModel>>(jsonResponse);
                     UserPoints = pointsFromApi ?? new List<PointsBgamesModel>();
                     Monitor.Log($"[UserBgamesController] Puntos cargados correctamente. total={UserPoints.Count}", LogLevel.Info);
@@ -240,6 +96,7 @@ namespace bGamesPointsMod.Controllers
                 }
                 else
                 {
+                    UserPoints = new List<PointsBgamesModel>();
                     Monitor.Log("No se pudo cargar el puntaje del usuario porque no hay datos disponibles.",
                         LogLevel.Warn);
                 }
@@ -250,19 +107,23 @@ namespace bGamesPointsMod.Controllers
             }
         }
 
-        private string? GetAccessToken()
+        private void ApplyCurrentUser(UserBgamesModel currentUser)
         {
-            if (!string.IsNullOrWhiteSpace(LoginResponse?.AccessToken))
-            {
-                return LoginResponse.AccessToken;
-            }
+            UserBgamesModel.IdPlayers = currentUser.IdPlayers;
+            UserBgamesModel.Name = currentUser.Name;
+            UserBgamesModel.Email = currentUser.Email;
+            UserBgamesModel.Age = currentUser.Age;
+            UserBgamesModel.Roles = currentUser.Roles ?? new List<string>();
+        }
 
-            if (!string.IsNullOrWhiteSpace(SavedSession?.AccessToken))
-            {
-                return SavedSession.AccessToken;
-            }
-
-            return null;
+        public void ClearCurrentUserState()
+        {
+            UserBgamesModel.IdPlayers = 0;
+            UserBgamesModel.Name = string.Empty;
+            UserBgamesModel.Email = string.Empty;
+            UserBgamesModel.Age = 0;
+            UserBgamesModel.Roles = new List<string>();
+            UserPoints = new List<PointsBgamesModel>();
         }
 
         public UserBgamesModel GetUser()
@@ -333,9 +194,8 @@ namespace bGamesPointsMod.Controllers
                     // Configurar la solicitud HTTP
                     using (var content = new StringContent(jsonContent, Encoding.UTF8, "application/json"))
                     {
-                        // Realizar la solicitud PUT
                         HttpResponseMessage response =
-                            await httpClient.PutAsync($"{Core}/player_attributes_single", content);
+                            await httpClient.PutAsync("http://localhost:8012/player_attributes_single", content);
 
                         // Verificar la respuesta
                         if (response.IsSuccessStatusCode)
@@ -363,11 +223,11 @@ namespace bGamesPointsMod.Controllers
         {
             try
             {
-                var response = await httpClient.GetAsync($"{Core}/health");
+                var response = await httpClient.GetAsync($"{LocalApi}/health");
                 if (!response.IsSuccessStatusCode)
                 {
                     Monitor.Log(
-                        $"[UserBgamesController] No se pudo establecer la conexión a health (StatusCode: {response.StatusCode}).",
+                        $"[UserBgamesController] No se pudo establecer la conexion con lsg-client health (StatusCode: {response.StatusCode}).",
                         LogLevel.Warn);
                     return false;
                 }
@@ -376,18 +236,18 @@ namespace bGamesPointsMod.Controllers
                 var health = JsonConvert.DeserializeObject<HealthResponse>(json);
                 if (health?.Status?.Equals("ok", StringComparison.OrdinalIgnoreCase) == true)
                 {
-                    Monitor.Log("[UserBgamesController] Conexion a health establecida.", LogLevel.Info);
+                    Monitor.Log("[UserBgamesController] Conexion con lsg-client establecida.", LogLevel.Info);
                     return true;
                 }
 
                 Monitor.Log(
-                    $"[UserBgamesController] Conexión a health establecida, pero status no fue 'ok'. Status: {health?.Status}",
+                    $"[UserBgamesController] Health de lsg-client respondio sin status ok. Status: {health?.Status}",
                     LogLevel.Warn);
                 return false;
             }
             catch (Exception ex)
             {
-                Monitor.Log($"[UserBgamesController] Error al intentar conectar con health: {ex.Message}",
+                Monitor.Log($"[UserBgamesController] Error al intentar conectar con lsg-client health: {ex.Message}",
                     LogLevel.Error);
                 return false;
             }

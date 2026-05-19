@@ -7,11 +7,11 @@ using StardewValley;
 using StardewValley.Menus;
 using StardewValley.Tools;
 using bGamesPointsMod.Models;
-using bGamesPointsMod.Views;
 using Microsoft.Xna.Framework.Content;
 using StardewValley.Buffs;
+using bGamesPointsMod.Controllers;
 
-namespace bGamesPointsMod.Controllers
+namespace bGamesPointsMod.Views
 {
     public class MenuBuffView : IClickableMenu
     {
