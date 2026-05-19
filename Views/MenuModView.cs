@@ -195,6 +195,12 @@ namespace bGamesPointsMod.Views
         }
 
         public void OnOpenMenuBuff(ButtonPressedEventArgs e, BuffController buffController, LevelUpController levelUpController) {
+            // Evita que los botones puedan ser clickeados si no está abierto el menu
+            if (!isMenuVisible)
+            {
+                return;
+            }
+
             // Verificar si el bot�n de Buffs fue clickeado
             if (e.Button == SButton.MouseLeft && buttonBuff.bounds.Contains(Game1.getMouseX(), Game1.getMouseY())) {
                 this.Monitor.Log("Bot�n de Buffs clickeado.", LogLevel.Info);
