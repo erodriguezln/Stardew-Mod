@@ -22,7 +22,6 @@ namespace bGamesPointsMod
         public LevelUpModel fishingSkill;
         public LevelUpModel combatSkill;
         public LevelUpModel luckSkill;
-        bool CheckConnection;
 
         // Controlador de Buffs
         public BuffController buffController;
@@ -220,38 +219,22 @@ namespace bGamesPointsMod
             Monitor.Log($"Reward applied: buff_id={buffId}.", LogLevel.Info);
         }
 
-        private async void OnDayStarted(object sender, DayStartedEventArgs e) {
-            CheckConnection = await userController.CheckConnectionLsg();
-
+        private void OnDayStarted(object sender, DayStartedEventArgs e) {
             // Verifica si el jugador tiene un pico equipado
             if (Game1.player.CurrentTool is Pickaxe pickaxe) {
                 // Restauramos la velocidad de animación del pico a su valor por defecto (1.0)
                 pickaxe.AnimationSpeedModifier = 1.0f;
                 this.Monitor.Log("Nuevo día: Se restauró la velocidad de animación del pico a 1.0.", LogLevel.Info);
             }
-            if (CheckConnection) {
-                this.Monitor.Log("Conexion con lsg-client establecida!", LogLevel.Info);
-
-                bool hasSession = await userController.TryLoadCurrentSession();
-                if (hasSession) {
-                    this.Monitor.Log($"Sesion detectada en lsg-client para player_id={userBgamesModel.IdPlayers}.", LogLevel.Info);
-                }
-                else {
-                    this.Monitor.Log("lsg-client esta activo pero no hay sesion iniciada.", LogLevel.Info);
-                }
-            }
-            else {
-                userController.ClearCurrentUserState();
-                this.Monitor.Log("Sin conexion con lsg-client!", LogLevel.Info);
-            }
         }
         private async void OnButtonPressed(object? sender, ButtonPressedEventArgs e) {
-            CheckConnection = await userController.CheckConnectionLsg();
-
             if (!Context.IsWorldReady) return;
 
             if (e.Button == SButton.MouseLeft && bBMenuMod.Contains(Game1.getMouseX(), Game1.getMouseY())) {
-                if (CheckConnection) {
+                // Solo el intento explícito de abrir el menu consulta lsg-client evitando spam anterior.
+                bool checkConnection = await userController.CheckConnectionLsg();
+
+                if (checkConnection) {
                     this.Monitor.Log("Conexion con lsg-client establecida!", LogLevel.Info);
 
                     bool hasSession = await userController.TryLoadCurrentSession();
