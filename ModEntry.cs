@@ -124,7 +124,7 @@ namespace bGamesPointsMod
             levelUpController = new LevelUpController(this.Monitor, this.Helper, miningSkill, foraningSkill, fishingSkill, combatSkill, luckSkill);
 
             // Crear instancia de Menu
-            menu = new MenuModView(helper, buffController, Monitor, userBgamesModel, userController, levelUpController);
+            menu = new MenuModView(helper, Monitor, userBgamesModel, userController);
 
             
 
@@ -188,7 +188,7 @@ namespace bGamesPointsMod
                 }
             }
             else {
-                menu.OnOpenMenuBuff(e, buffController, levelUpController);
+                menu.HandleButtonClick(e);
             }
         }
         private void OnRenderedHud(object sender, RenderedHudEventArgs e) {
