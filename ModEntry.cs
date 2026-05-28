@@ -118,7 +118,7 @@ namespace bGamesPointsMod
                 luckLevelBuff,
                 fishingBuff,
                 farmingBuff);
-            userController = new UserBgamesController(this.Monitor, helper, userBgamesModel);
+            userController = new UserBgamesController(this.Monitor, userBgamesModel);
 
             // Crear instancia de LevelUpController
             levelUpController = new LevelUpController(this.Monitor, this.Helper, miningSkill, foraningSkill, fishingSkill, combatSkill, luckSkill);

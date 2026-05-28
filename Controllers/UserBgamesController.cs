@@ -4,7 +4,6 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using bGamesPointsMod.Models;
-using System.Text;
 
 namespace bGamesPointsMod.Controllers
 {
@@ -21,7 +20,6 @@ namespace bGamesPointsMod.Controllers
 
         public UserBgamesController(
             IMonitor monitor,
-            IModHelper helper,
             UserBgamesModel userBgamesModel)
         {
             this.Monitor = monitor;
@@ -126,97 +124,10 @@ namespace bGamesPointsMod.Controllers
             UserPoints = new List<PointsBgamesModel>();
         }
 
-        public UserBgamesModel GetUser()
-        {
-            return UserBgamesModel;
-        }
-
         public IReadOnlyList<PointsBgamesModel> GetUserPoints()
         {
             return UserPoints;
         }
-
-        // funcion para gastar puntos en las habilidades
-        public int SpendPoints(int spendPoints)
-        {
-            //Cada habilidad va a costar 5 puntos bGames o mas
-            int i = spendPoints;
-            if (UserPoints.Count > 0)
-            {
-                while (i > 0)
-                {
-                    foreach (var points in UserPoints)
-                    {
-                        // recorre el puntaje de cada tributo
-                        if (points.SnapshotPoints > 0 && spendPoints > 0)
-                        {
-                            spendPoints--; //le se resta uno a los puntos a gastar
-                            points.SnapshotPoints -= 1; // tambien resto uno a los puntos actuales
-                        }
-                    }
-
-                    if (spendPoints == 0)
-                    {
-                        return 1;
-                    }
-
-                    i--;
-                }
-
-                if (spendPoints > 0)
-                {
-                    return 0; // si no se gasto todo lo que se queria gastar se sale de la funcion
-                }
-            }
-
-            return 0;
-        }
-
-        public async Task SavePointsBgames()
-        {
-            try
-            {
-                int userId = UserBgamesModel.IdPlayers;
-
-                foreach (var points in UserPoints)
-                {
-                    // Crear el cuerpo del JSON
-                    var payload = new
-                    {
-                        id_player = userId,
-                        id_attributes = points.Id_attributes,
-                        new_data = points.SnapshotPoints
-                    };
-
-                    // Serializar el JSON
-                    string jsonContent = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
-
-                    // Configurar la solicitud HTTP
-                    using (var content = new StringContent(jsonContent, Encoding.UTF8, "application/json"))
-                    {
-                        HttpResponseMessage response =
-                            await httpClient.PutAsync("http://localhost:8012/player_attributes_single", content);
-
-                        // Verificar la respuesta
-                        if (response.IsSuccessStatusCode)
-                        {
-                            Monitor.Log($"Puntos actualizados correctamente: {points.AttributeName} ({points.SnapshotPoints})",
-                                LogLevel.Info);
-                        }
-                        else
-                        {
-                            string error = await response.Content.ReadAsStringAsync();
-                            Monitor.Log($"Error al actualizar los puntos para {points.AttributeName}: {error}", LogLevel.Error);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Monitor.Log($"Error al guardar los puntos: {ex.Message}", LogLevel.Error);
-            }
-        }
-
 
         // Health check
         public async Task<bool> CheckConnectionLsg()
