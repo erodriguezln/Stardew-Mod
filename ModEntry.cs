@@ -123,8 +123,8 @@ namespace bGamesPointsMod
             levelUpController = new LevelUpController(this.Monitor, this.Helper, miningSkill, foraningSkill, fishingSkill, combatSkill, luckSkill);
 
             // Inicia el servidor HTTP de recompensas en segundo plano.
-            // El server solo recibe buff_id y deja la ejecucion final para ApplyBuff en main thread.
-            RewardHttpServer.Start(ApplyBuff, message => this.Monitor.Log(message, LogLevel.Info));
+            // El server solo recibe reward_id y deja la ejecucion final para ApplyReward en main thread.
+            RewardHttpServer.Start(ApplyReward, message => this.Monitor.Log(message, LogLevel.Info));
 
             // Crear instancia de Menu
             menu = new MenuModView(helper, Monitor, userBgamesModel, userController);
@@ -146,7 +146,7 @@ namespace bGamesPointsMod
 
         // Se ejecuta cuando termina de cargar una partida (se carga un save, etc). Mantiene activo el endpoint POST /reward durante gameplay.
         private void OnSaveLoaded(object? sender, SaveLoadedEventArgs e) {
-            RewardHttpServer.Start(ApplyBuff, message => this.Monitor.Log(message, LogLevel.Info));
+            RewardHttpServer.Start(ApplyReward, message => this.Monitor.Log(message, LogLevel.Info));
         }
 
         // Se ejecuta al volver al título. Cierra el listener HTTP para evitar estado viejo entre saves.
@@ -159,15 +159,15 @@ namespace bGamesPointsMod
             RewardHttpServer.DrainPending();
         }
 
-        // Callback registrado en RewardHttpServer.Start(). Materializa el buff_id recibido por HTTP.
+        // Callback registrado en RewardHttpServer.Start(). Materializa el reward_id recibido por HTTP.
         // El server no conoce gameplay, solo entrega el id (la idea es que sea agnostico razon por la que se usa el mismo codigo en terraria).
-        private void ApplyBuff(int buffId) {
+        private void ApplyReward(int rewardId) {
             if (!Context.IsWorldReady || Game1.player == null) {
-                Monitor.Log($"Reward '{buffId}' ignored because the world is not ready.", LogLevel.Warn);
+                Monitor.Log($"Reward '{rewardId}' ignored because the world is not ready.", LogLevel.Warn);
                 return;
             }
 
-            switch (buffId) {
+            switch (rewardId) {
                 // Buffs temporales.
                 case 1:
                     buffController.BuffSpeed();
@@ -212,11 +212,11 @@ namespace bGamesPointsMod
                     levelUpController.SkillFarming();
                     break;
                 default:
-                    Monitor.Log($"Unknown reward buff_id={buffId}. Reward ignored.", LogLevel.Warn);
+                    Monitor.Log($"Unknown reward_id={rewardId}. Reward ignored.", LogLevel.Warn);
                     return;
             }
 
-            Monitor.Log($"Reward applied: buff_id={buffId}.", LogLevel.Info);
+            Monitor.Log($"Reward applied: reward_id={rewardId}.", LogLevel.Info);
         }
 
         private void OnDayStarted(object sender, DayStartedEventArgs e) {
