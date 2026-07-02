@@ -16,7 +16,7 @@ namespace bGamesPointsMod
         public LevelUpModel foraningSkill = null!;
         public LevelUpModel fishingSkill = null!;
         public LevelUpModel combatSkill = null!;
-        public LevelUpModel luckSkill = null!;
+        public LevelUpModel farmingSkill = null!;
 
         // Controladores
         public BuffController buffController = null!;
@@ -29,12 +29,12 @@ namespace bGamesPointsMod
             foraningSkill = new LevelUpModel(50, "Foraging");
             fishingSkill = new LevelUpModel(50, "Fishing");
             combatSkill = new LevelUpModel(50, "Combat");
-            luckSkill = new LevelUpModel(50, "Luck");
+            farmingSkill = new LevelUpModel(50, "Farming");
 
             // Crear controladores
             buffController = new BuffController(this.Monitor, this.Helper);
             levelUpController = new LevelUpController(this.Monitor, this.Helper, miningSkill, foraningSkill,
-                fishingSkill, combatSkill, luckSkill);
+                fishingSkill, combatSkill, farmingSkill);
 
             // Inicia el servidor HTTP de recompensas en segundo plano.
             // El server solo recibe reward_id y deja la ejecucion final para ApplyReward en main thread.
