@@ -7,216 +7,222 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
+using System.Collections.Concurrent;
 
 namespace bGamesPointsMod.Controllers
 {
-	/// <summary>
-	/// Servidor HTTP liviano que corre en segundo plano.
-	/// Expone: POST /reward con un payload JSON que incluye <c>reward_id</c>.
-	/// Es agnóstico a la lógica de dominio: solo recibe, valida y deja el valor pendiente
-	/// para que el callback registrado en <see cref="Start"/> lo procese en el main thread.
-	/// </summary>
-	internal static class RewardHttpServer
-	{
-		private const int Port = 7878;
-		private const int NoPendingValue = -1;
+    /// <summary>
+    /// Servidor HTTP liviano que corre en segundo plano.
+    /// Expone: POST /reward con un payload JSON que incluye <c>reward_id</c>.
+    /// Es agnóstico a la lógica de dominio: solo recibe, valida y deja el valor pendiente
+    /// para que el callback registrado en <see cref="Start"/> lo procese en el main thread.
+    /// </summary>
+    internal static class RewardHttpServer
+    {
+        private const int Port = 7878;
 
-		// Usado por HTTP thread para escuchar requests. Necesita estar set para que ListenLoop() funcione.
-		private static HttpListener? _listener;
+        // Usado por HTTP thread para escuchar requests. Necesita estar set para que ListenLoop() funcione.
+        private static HttpListener? _listener;
 
-		// Referencia al HTTP thread. Se inicia en Start() y se detiene en Stop().
-		private static Thread? _thread;
+        // Referencia al HTTP thread. Se inicia en Start() y se detiene en Stop().
+        private static Thread? _thread;
 
-		// Callback registrado por el aplicativo. Se invoca desde main thread via DrainPending().
-		private static Action<int>? _onReward;
+        // Callback registrado por el aplicativo. Se invoca desde main thread via DrainPending().
+        private static Action<int>? _onReward;
 
-		// _logger:      Logger compartido. Usado por ambos threads para logging.
-		private static Action<string>? _logger;
+        // _logger:      Logger compartido. Usado por ambos threads para logging.
+        private static Action<string>? _logger;
 
-		// Estado compartido entre threads: guarda el reward pendiente hasta que DrainPending() lo consuma.
-		private static volatile int _pendingValue = NoPendingValue;
+        // Cola concurrente segura para almacenar múltiples recompensas entrantes desde el HTTP thread
+        // sin riesgo de sobreescritura o condiciones de carrera.
+        private static readonly ConcurrentQueue<int> PendingRewards = new ConcurrentQueue<int>();
 
-		// Inicia el listener HTTP en un thread en segundo plano.
-		public static void Start(Action<int> onReward, Action<string>? logger = null)
-		{
-			if (_listener != null)
-				return;
+        // Inicia el listener HTTP en un thread en segundo plano.
+        public static void Start(Action<int> onReward, Action<string>? logger = null)
+        {
+            if (_listener != null)
+                return;
 
-			_onReward = onReward ?? throw new ArgumentNullException(nameof(onReward));
-			_logger = logger ?? Console.WriteLine;
+            _onReward = onReward ?? throw new ArgumentNullException(nameof(onReward));
+            _logger = logger ?? Console.WriteLine;
 
-			_listener = new HttpListener();
-			_listener.Prefixes.Add($"http://localhost:{Port}/");
-			_listener.Start();
+            // Limpiar cualquier residuo de ejecuciones anteriores de manera sencilla y clara
+            PendingRewards.Clear();
 
-			// El listener loop vive en un thread separado para no bloquear el main thread del juego.
-			// Ese thread solo atiende I/O HTTP y deja el efecto final pendiente para DrainPending().
-			_thread = new Thread(ListenLoop) {
-				IsBackground = true,
-				Name = "bGamesMod-RewardHttpServer"
-			};
-			_thread.Start();
+            _listener = new HttpListener();
+            _listener.Prefixes.Add($"http://localhost:{Port}/");
+            _listener.Start();
 
-			Log($"[RewardHttpServer] Listening on http://localhost:{Port}/");
-		}
+            // El listener loop vive en un thread separado para no bloquear el main thread del juego.
+            // Ese thread solo atiende I/O HTTP y deja el efecto final pendiente para DrainPending().
+            _thread = new Thread(ListenLoop)
+            {
+                IsBackground = true,
+                Name = "bGamesMod-RewardHttpServer"
+            };
+            _thread.Start();
 
-		public static void Stop()
-		{
-			try
-			{
-				_listener?.Stop();
-				_listener?.Close();
-			}
-			catch
-			{
-				// ignore shutdown errors
-			}
-			finally
-			{
-				_listener = null;
-				_thread = null;
-				_onReward = null;
-				_logger = null;
-				_pendingValue = NoPendingValue;
-				// Limpia el estado compartido para que un reinicio arranque desde cero.
-			}
-		}
+            Log($"[RewardHttpServer] Listening on http://localhost:{Port}/");
+        }
 
-		// Transfiere cualquier _pendingValue recibido por el HTTP thread al main thread e invoca el callback registrado.
-		// Debe ser llamado en cada game loop.
-		public static void DrainPending()
-		{
-			int value = _pendingValue;
-			if (value == NoPendingValue)
-				return;
+        public static void Stop()
+        {
+            try
+            {
+                _listener?.Stop();
+                _listener?.Close();
+            }
+            catch
+            {
+                // ignore shutdown errors
+            }
+            finally
+            {
+                _listener = null;
+                _thread = null;
+                _onReward = null;
+                _logger = null;
+                // Limpia el estado compartido para que un reinicio arranque desde cero.
+                PendingRewards.Clear();
+            }
+        }
 
-			// Reset antes de invocar para permitir que llegue un nuevo request inmediatamente.
-			_pendingValue = NoPendingValue;
+        // Transfiere todas las recompensas recibidas por el HTTP thread al main thread del juego.
+        // Debe ser llamado en cada game loop.
+        public static void DrainPending()
+        {
+            // El callback corre en el main thread de la aplicación, donde es seguro tocar estado compartido.
+            while (PendingRewards.TryDequeue(out int rewardId))
+            {
+                _onReward?.Invoke(rewardId);
+            }
+        }
 
-			// El callback corre en el main thread de la aplicación, donde es seguro tocar estado compartido.
-			_onReward?.Invoke(value);
-		}
+        // Background listener loop (bloqueante). Razon por la que el HTTP server corre en un thread separado.
+        private static void ListenLoop()
+        {
+            while (true)
+            {
+                HttpListenerContext ctx;
+                try
+                {
+                    // bloquea hasta que llegue un request.
+                    if (_listener is null)
+                        break;
 
-		// Background listener loop (bloqueante). Razon por la que el HTTP server corre en un thread separado.
-		private static void ListenLoop()
-		{
-			while (true)
-			{
-				HttpListenerContext ctx;
-				try
-				{
-					// bloquea hasta que llegue un request.
-					if (_listener is null)
-						break;
+                    ctx = _listener.GetContext();
+                }
+                catch (HttpListenerException)
+                {
+                    // Este error ocurre cuando se llama a Stop() y el listener se cierra mientras GetContext() está bloqueando.
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    Log("[RewardHttpServer] Listener error: " + ex.Message);
+                    break;
+                }
 
-					ctx = _listener.GetContext();
-				}
-				catch (HttpListenerException)
-				{
-					// Este error ocurre cuando se llama a Stop() y el listener se cierra mientras GetContext() está bloqueando.
-					break;
-				}
-				catch (Exception ex)
-				{
-					Log("[RewardHttpServer] Listener error: " + ex.Message);
-					break;
-				}
+                HandleContext(ctx);
+            }
+        }
 
-				HandleContext(ctx);
-			}
-		}
+        // Punto de entrada para cada request HTTP: decide si corresponde al endpoint /reward o responde 404.
+        private static void HandleContext(HttpListenerContext ctx)
+        {
+            var req = ctx.Request;
+            var resp = ctx.Response;
 
-		// Punto de entrada para cada request HTTP: decide si corresponde al endpoint /reward o responde 404.
-		private static void HandleContext(HttpListenerContext ctx)
-		{
-			var req = ctx.Request;
-			var resp = ctx.Response;
+            try
+            {
+                // Router mínimo: solo POST /reward entra al flujo de recompensas.
+                bool isReward = req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase)
+                                && req.Url is not null
+                                && req.Url.AbsolutePath.TrimEnd('/')
+                                    .Equals("/reward", StringComparison.OrdinalIgnoreCase);
 
-			try
-			{
-				// Router mínimo: solo POST /reward entra al flujo de recompensas.
-				bool isReward = req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase)
-				                && req.Url is not null
-				                && req.Url.AbsolutePath.TrimEnd('/')
-					                .Equals("/reward", StringComparison.OrdinalIgnoreCase);
+                bool isHealth = req.HttpMethod.Equals("GET", StringComparison.OrdinalIgnoreCase)
+                                && req.Url is not null
+                                && req.Url.AbsolutePath.TrimEnd('/')
+                                    .Equals("/health", StringComparison.OrdinalIgnoreCase);
 
-				bool isHealth = req.HttpMethod.Equals("GET", StringComparison.OrdinalIgnoreCase)
-				                && req.Url is not null
-				                && req.Url.AbsolutePath.TrimEnd('/')
-					                .Equals("/health", StringComparison.OrdinalIgnoreCase);
+                if (isReward)
+                    HandleReward(req, resp);
+                else if (isHealth)
+                    SendJson(resp, 200, "{\"status\":\"ok\"}");
+                else
+                    SendJson(resp, 404, "{\"error\":\"Not Found\"}");
+            }
+            catch (Exception ex)
+            {
+                Log("[RewardHttpServer] Handler error: " + ex.Message);
+                try
+                {
+                    SendJson(resp, 500, "{\"error\":\"Internal Server Error\"}");
+                }
+                catch
+                {
+                }
+            }
+        }
 
-				if (isReward)
-					HandleReward(req, resp);
-				else if (isHealth)
-					SendJson(resp, 200, "{\"status\":\"ok\"}");
-				else
-					SendJson(resp, 404, "{\"error\":\"Not Found\"}");
-			}
-			catch (Exception ex)
-			{
-				Log("[RewardHttpServer] Handler error: " + ex.Message);
-				try { SendJson(resp, 500, "{\"error\":\"Internal Server Error\"}"); }
-				catch { }
-			}
-		}
+        private static void HandleReward(HttpListenerRequest req, HttpListenerResponse resp)
+        {
+            // Read body: el JSON del endpoint debe llegar en el request body.
+            string body;
+            using (var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8))
+                body = reader.ReadToEnd();
 
-		private static void HandleReward(HttpListenerRequest req, HttpListenerResponse resp)
-		{
-			// Read body: el JSON del endpoint debe llegar en el request body.
-			string body;
-			using (var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8))
-				body = reader.ReadToEnd();
+            // Parse JSON y aplicar validación básica del payload.
+            RewardPayload? payload;
+            try
+            {
+                payload = JsonSerializer.Deserialize<RewardPayload>(body);
+            }
+            catch
+            {
+                SendJson(resp, 400, "{\"error\":\"Invalid JSON\"}");
+                return;
+            }
 
-			// Parse JSON y aplicar validación básica del payload.
-			RewardPayload? payload;
-			try
-			{
-				payload = JsonSerializer.Deserialize<RewardPayload>(body);
-			}
-			catch
-			{
-				SendJson(resp, 400, "{\"error\":\"Invalid JSON\"}");
-				return;
-			}
+            if (payload == null)
+            {
+                SendJson(resp, 400, "{\"error\":\"Empty body\"}");
+                return;
+            }
 
-			if (payload == null)
-			{
-				SendJson(resp, 400, "{\"error\":\"Empty body\"}");
-				return;
-			}
+            // Sanity check basico, la validación de dominio más específica queda en el callback del mod.
+            if (payload.RewardId <= 0)
+            {
+                SendJson(resp, 400, "{\"error\":\"'reward_id' must be a positive integer\"}");
+                return;
+            }
 
-			// Sanity check basico, la validación de dominio más específica queda en el callback del mod.
-			if (payload.RewardId <= 0)
-			{
-				SendJson(resp, 400, "{\"error\":\"'reward_id' must be a positive integer\"}");
-				return;
-			}
+            // Encolar de forma segura en la cola concurrente para ser consumido por el main thread
+            PendingRewards.Enqueue(payload.RewardId);
+            Log($"[RewardHttpServer] Reward queued -> reward_id={payload.RewardId}");
 
-			// Señala al main thread, si llega otra request antes de DrainPending(), este valor se sobreescribe.
-			_pendingValue = payload.RewardId;
-			Log($"[RewardHttpServer] Reward queued -> reward_id={payload.RewardId}");
-
-			SendJson(resp, 200, $"{{\"ok\":true,\"reward_id\":{payload.RewardId}}}");
-		}
+            SendJson(resp, 200, $"{{\"ok\":true,\"reward_id\":{payload.RewardId}}}");
+        }
 
 
-		// Helpers
-		private static void Log(string message) => _logger?.Invoke(message);
+        // Helpers
+        private static void Log(string message) => _logger?.Invoke(message);
 
-		private static void SendJson(HttpListenerResponse resp, int statusCode, string json)
-		{
-			resp.StatusCode = statusCode;
-			resp.ContentType = "application/json";
-			byte[] buf = Encoding.UTF8.GetBytes(json);
-			resp.ContentLength64 = buf.Length;
-			resp.OutputStream.Write(buf, 0, buf.Length);
-			resp.OutputStream.Close();
-		}
+        private static void SendJson(HttpListenerResponse resp, int statusCode, string json)
+        {
+            resp.StatusCode = statusCode;
+            resp.ContentType = "application/json";
+            byte[] buf = Encoding.UTF8.GetBytes(json);
+            resp.ContentLength64 = buf.Length;
+            resp.OutputStream.Write(buf, 0, buf.Length);
+            resp.OutputStream.Close();
+        }
 
-		// DTO para deserializar el payload del POST /reward.
-		private sealed class RewardPayload
-		{
-			[JsonPropertyName("reward_id")] public int RewardId { get; set; }
-		}
-	}
+        // DTO para deserializar el payload del POST /reward.
+        private sealed class RewardPayload
+        {
+            [JsonPropertyName("reward_id")] public int RewardId { get; set; }
+        }
+    }
 }
