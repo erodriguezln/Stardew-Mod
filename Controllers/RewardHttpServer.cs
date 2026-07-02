@@ -1,12 +1,7 @@
-#nullable enable
-
-using System;
-using System.IO;
 using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading;
 using System.Collections.Concurrent;
 
 namespace bGamesPointsMod.Controllers
@@ -14,7 +9,7 @@ namespace bGamesPointsMod.Controllers
     /// <summary>
     /// Servidor HTTP liviano que corre en segundo plano.
     /// Expone: POST /reward con un payload JSON que incluye <c>reward_id</c>.
-    /// Es agnóstico a la lógica de dominio: solo recibe, valida y deja el valor pendiente
+    /// Es agnóstico a la lógica de dominio: solo recibe, válida y deja el valor pendiente
     /// para que el callback registrado en <see cref="Start"/> lo procese en el main thread.
     /// </summary>
     internal static class RewardHttpServer
@@ -30,11 +25,11 @@ namespace bGamesPointsMod.Controllers
         // Callback registrado por el aplicativo. Se invoca desde main thread via DrainPending().
         private static Action<int>? _onReward;
 
-        // _logger:      Logger compartido. Usado por ambos threads para logging.
+        // _logger: Logger compartido. Usado por ambos threads para logging.
         private static Action<string>? _logger;
 
         // Cola concurrente segura para almacenar múltiples recompensas entrantes desde el HTTP thread
-        // sin riesgo de sobreescritura o condiciones de carrera.
+        // sin riesgo de sobre escritura o condiciones de carrera.
         private static readonly ConcurrentQueue<int> PendingRewards = new ConcurrentQueue<int>();
 
         // Inicia el listener HTTP en un thread en segundo plano.
@@ -169,9 +164,8 @@ namespace bGamesPointsMod.Controllers
         private static void HandleReward(HttpListenerRequest req, HttpListenerResponse resp)
         {
             // Read body: el JSON del endpoint debe llegar en el request body.
-            string body;
-            using (var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8))
-                body = reader.ReadToEnd();
+            using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+            var body = reader.ReadToEnd();
 
             // Parse JSON y aplicar validación básica del payload.
             RewardPayload? payload;
