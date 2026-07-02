@@ -1,37 +1,26 @@
-﻿using System;
-using Microsoft.Xna.Framework;
+using System;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
-using StardewModdingAPI.Utilities;
 using StardewValley;
 using StardewValley.Tools;
 using bGamesPointsMod.Models;
 using bGamesPointsMod.Controllers;
-using Microsoft.Xna.Framework.Graphics;
 using StardewValley.Buffs;
-using bGamesPointsMod.Views;
 
 namespace bGamesPointsMod
 {
     internal sealed class ModEntry : Mod
     {
-        // Modelos de Buffs
-        public UserBgamesModel userBgamesModel;
-        public LevelUpModel miningSkill;
-        public LevelUpModel foraningSkill;
-        public LevelUpModel fishingSkill;
-        public LevelUpModel combatSkill;
-        public LevelUpModel luckSkill;
+        // Modelos de Habilidades
+        public LevelUpModel miningSkill = null!;
+        public LevelUpModel foraningSkill = null!;
+        public LevelUpModel fishingSkill = null!;
+        public LevelUpModel combatSkill = null!;
+        public LevelUpModel luckSkill = null!;
 
-        // Controlador de Buffs
-        public BuffController buffController;
-        public UserBgamesController userController;
-        public LevelUpController levelUpController;
-
-        // Boton de menu de mod
-        private Texture2D bTMenuMod;
-        private Rectangle bBMenuMod;
-        private MenuModView menu;// Instancia de la clase Menu
+        // Controladores
+        public BuffController buffController = null!;
+        public LevelUpController levelUpController = null!;
 
         public override void Entry(IModHelper helper)
         {
@@ -100,13 +89,7 @@ namespace bGamesPointsMod
             combatSkill = new LevelUpModel(50, "Combat");
             luckSkill = new LevelUpModel(50, "Luck");
 
-
-            // Mostrar boton en pantalla del menu
-            bTMenuMod = helper.ModContent.Load<Texture2D>("assets/logo.png");
-            bBMenuMod = new Rectangle(10, 10, 40, 40);
-
-            // Crear instancia de BuffController
-            userBgamesModel = new UserBgamesModel();
+            // Crear controladores
             buffController = new BuffController(
                 this.Monitor, 
                 this.Helper, 
@@ -117,21 +100,13 @@ namespace bGamesPointsMod
                 luckLevelBuff,
                 fishingBuff,
                 farmingBuff);
-            userController = new UserBgamesController(this.Monitor, userBgamesModel);
-
-            // Crear instancia de LevelUpController
             levelUpController = new LevelUpController(this.Monitor, this.Helper, miningSkill, foraningSkill, fishingSkill, combatSkill, luckSkill);
 
             // Inicia el servidor HTTP de recompensas en segundo plano.
             // El server solo recibe reward_id y deja la ejecucion final para ApplyReward en main thread.
             RewardHttpServer.Start(ApplyReward, message => this.Monitor.Log(message, LogLevel.Info));
 
-            // Crear instancia de Menu
-            menu = new MenuModView(helper, Monitor, userBgamesModel, userController);
-
-            
-
-            // Mostrar boton en pantalla
+            // Suscribir eventos del juego
             helper.Events.GameLoop.DayStarted += OnDayStarted;
             // Reintenta iniciar el servidor cuando se carga una partida, por si fue detenido al volver al titulo.
             helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
@@ -139,9 +114,6 @@ namespace bGamesPointsMod
             helper.Events.GameLoop.ReturnedToTitle += OnReturnedToTitle;
             // Drena recompensas pendientes en cada tick para aplicar efectos desde el main thread de Stardew.
             helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
-            helper.Events.Input.ButtonPressed += this.OnButtonPressed;
-            helper.Events.Display.RenderedHud += OnRenderedHud;
-            //helper.Events.Input.ButtonPressed += OnButtonPressedLogin;
         }
 
         // Se ejecuta cuando termina de cargar una partida (se carga un save, etc). Mantiene activo el endpoint POST /reward durante gameplay.
@@ -226,45 +198,6 @@ namespace bGamesPointsMod
                 pickaxe.AnimationSpeedModifier = 1.0f;
                 this.Monitor.Log("Nuevo día: Se restauró la velocidad de animación del pico a 1.0.", LogLevel.Info);
             }
-        }
-        private async void OnButtonPressed(object? sender, ButtonPressedEventArgs e) {
-            if (!Context.IsWorldReady) return;
-
-            if (e.Button == SButton.MouseLeft && bBMenuMod.Contains(Game1.getMouseX(), Game1.getMouseY())) {
-                // Solo el intento explícito de abrir el menu consulta lsg-client evitando spam anterior.
-                bool checkConnection = await userController.CheckConnectionLsg();
-
-                if (checkConnection) {
-                    this.Monitor.Log("Conexion con lsg-client establecida!", LogLevel.Info);
-
-                    bool hasSession = await userController.TryLoadCurrentSession();
-                    if (hasSession) {
-                        Game1.addHUDMessage(new HUDMessage("LSG Client session loaded!", 2));
-                        Monitor.Log("Boton de menu clickeado.", LogLevel.Info);
-                        menu.ToggleMenu();
-                    }
-                    else {
-                        Game1.addHUDMessage(new HUDMessage("Sign in from LSG Client first!", 2));
-                        this.Monitor.Log("No hay sesion activa en lsg-client.", LogLevel.Info);
-                    }
-                }
-                else {
-                    userController.ClearCurrentUserState();
-                    this.Monitor.Log("Sin conexion con lsg-client!", LogLevel.Info);
-                    Game1.addHUDMessage(new HUDMessage("No connection with LSG Client!", 2));
-                    Game1.addHUDMessage(new HUDMessage("Start lsg-client to continue!", 2));
-
-                }
-            }
-            else {
-                menu.HandleButtonClick(e);
-            }
-        }
-        private void OnRenderedHud(object sender, RenderedHudEventArgs e) {
-            var spriteBatch = e.SpriteBatch;
-
-            spriteBatch.Draw(bTMenuMod, bBMenuMod, Color.White);
-            menu.RenderMenu(spriteBatch);
         }
     }
 }
