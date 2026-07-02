@@ -24,64 +24,6 @@ namespace bGamesPointsMod
 
         public override void Entry(IModHelper helper)
         {
-            // Inicializar Buffs
-            Buff miningBuff = new Buff(id: "Mining speed",
-                displayName: "Speed mining buff",
-                iconTexture: null,
-                iconSheetIndex: 0,
-                duration: 10_000, // 10 segundos
-                effects: new BuffEffects()
-                {MiningLevel = { 10 }});
-
-            Buff foragingBuff = new Buff(
-                id: "Foraging speed",
-                displayName: "Speed foraging buff",
-                iconTexture: null,
-                iconSheetIndex: 0,
-                duration: 10_000, // 10 segundos
-                effects: new BuffEffects()
-                {ForagingLevel = { 10 }});
-
-            Buff speedBuff = new Buff(
-                id: "walking speed",
-                displayName: "Walking speed buff",
-                iconTexture: null,
-                iconSheetIndex: 0,
-                duration: 10_000, // 10 segundos
-                effects: new BuffEffects()
-                {Speed = { 10 }});
-
-            Buff reducedEnergyBuff = new Buff(
-                id: "Reduced Energy",
-                displayName: "Speed mining buff",
-                iconTexture: null,
-                iconSheetIndex: 0,
-                duration: 30_000); // 10 segundos
-
-            Buff luckLevelBuff = new Buff(id: "Luck level up",
-                displayName: "Luck level up",
-                iconTexture: null,
-                iconSheetIndex: 0,
-                duration: 10_000, // 10 segundos
-                effects: new BuffEffects()
-                {LuckLevel = { 1 }});
-
-            Buff fishingBuff = new Buff(id: "Fishing speed",
-                displayName: "Fishing speed buff",
-                iconTexture: null,
-                iconSheetIndex: 0,
-                duration: 10_000, // 10 segundos
-                effects: new BuffEffects()
-                {FishingLevel = { 5 }});
-
-            Buff farmingBuff = new Buff(id: "Farming speed",
-                displayName: "Speed farming buff",
-                iconTexture: null,
-                iconSheetIndex: 0,
-                duration: 10_000, // 10 segundos
-                effects: new BuffEffects()
-                {FarmingLevel = { 5 }});
-
             // Inicializar modelos de level up
             miningSkill = new LevelUpModel(50, "Mining");
             foraningSkill = new LevelUpModel(50, "Foraging");
@@ -90,17 +32,9 @@ namespace bGamesPointsMod
             luckSkill = new LevelUpModel(50, "Luck");
 
             // Crear controladores
-            buffController = new BuffController(
-                this.Monitor, 
-                this.Helper, 
-                miningBuff, 
-                foragingBuff, 
-                speedBuff, 
-                reducedEnergyBuff,
-                luckLevelBuff,
-                fishingBuff,
-                farmingBuff);
-            levelUpController = new LevelUpController(this.Monitor, this.Helper, miningSkill, foraningSkill, fishingSkill, combatSkill, luckSkill);
+            buffController = new BuffController(this.Monitor, this.Helper);
+            levelUpController = new LevelUpController(this.Monitor, this.Helper, miningSkill, foraningSkill,
+                fishingSkill, combatSkill, luckSkill);
 
             // Inicia el servidor HTTP de recompensas en segundo plano.
             // El server solo recibe reward_id y deja la ejecucion final para ApplyReward en main thread.
@@ -117,29 +51,35 @@ namespace bGamesPointsMod
         }
 
         // Se ejecuta cuando termina de cargar una partida (se carga un save, etc). Mantiene activo el endpoint POST /reward durante gameplay.
-        private void OnSaveLoaded(object? sender, SaveLoadedEventArgs e) {
+        private void OnSaveLoaded(object? sender, SaveLoadedEventArgs e)
+        {
             RewardHttpServer.Start(ApplyReward, message => this.Monitor.Log(message, LogLevel.Info));
         }
 
         // Se ejecuta al volver al título. Cierra el listener HTTP para evitar estado viejo entre saves.
-        private void OnReturnedToTitle(object? sender, ReturnedToTitleEventArgs e) {
+        private void OnReturnedToTitle(object? sender, ReturnedToTitleEventArgs e)
+        {
             RewardHttpServer.Stop();
         }
 
         // Transfiere cualquier reward recibido por el HTTP thread al main thread del juego.
-        private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e) {
+        private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
+        {
             RewardHttpServer.DrainPending();
         }
 
         // Callback registrado en RewardHttpServer.Start(). Materializa el reward_id recibido por HTTP.
         // El server no conoce gameplay, solo entrega el id (la idea es que sea agnostico razon por la que se usa el mismo codigo en terraria).
-        private void ApplyReward(int rewardId) {
-            if (!Context.IsWorldReady || Game1.player == null) {
+        private void ApplyReward(int rewardId)
+        {
+            if (!Context.IsWorldReady || Game1.player == null)
+            {
                 Monitor.Log($"Reward '{rewardId}' ignored because the world is not ready.", LogLevel.Warn);
                 return;
             }
 
-            switch (rewardId) {
+            switch (rewardId)
+            {
                 // Buffs temporales.
                 case 1:
                     buffController.BuffSpeed();
@@ -162,9 +102,11 @@ namespace bGamesPointsMod
                 case 7:
                     bool wasReducedEnergyActive = buffController.IsActiveReducedEnergyBuff;
                     buffController.ReducedEnergyBuff();
-                    if (!wasReducedEnergyActive) {
+                    if (!wasReducedEnergyActive)
+                    {
                         this.Helper.Events.GameLoop.UpdateTicked += buffController.OnUpdateTickedReducedEnergyBuff;
                     }
+
                     break;
 
                 // Recompensas de experiencia.
@@ -191,9 +133,11 @@ namespace bGamesPointsMod
             Monitor.Log($"Reward applied: reward_id={rewardId}.", LogLevel.Info);
         }
 
-        private void OnDayStarted(object sender, DayStartedEventArgs e) {
+        private void OnDayStarted(object sender, DayStartedEventArgs e)
+        {
             // Verifica si el jugador tiene un pico equipado
-            if (Game1.player.CurrentTool is Pickaxe pickaxe) {
+            if (Game1.player.CurrentTool is Pickaxe pickaxe)
+            {
                 // Restauramos la velocidad de animación del pico a su valor por defecto (1.0)
                 pickaxe.AnimationSpeedModifier = 1.0f;
                 this.Monitor.Log("Nuevo día: Se restauró la velocidad de animación del pico a 1.0.", LogLevel.Info);

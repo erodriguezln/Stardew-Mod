@@ -1,86 +1,64 @@
-﻿using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Buffs;
 
 namespace bGamesPointsMod.Controllers;
+
 public class BuffController
 {
     private readonly IMonitor Monitor;
     private readonly IModHelper Helper;
-    public Buff miningBuff;
-    public Buff foraningBuff;
-    public Buff speedBuff;
-    public Buff reducedEnergyBuff;
-    public Buff luckLevelBuff;
-    public Buff fishingBuff;
-    public Buff farmingBuff;
     private float lastStamina; // Para rastrear cambios en la energía
     private float originalZoomLevel; // Almacena el nivel de zoom original
 
-    public BuffController(
-             IMonitor monitor,
-             IModHelper helper,  //Helper
-             Buff miningBuff,
-             Buff foragingBuff,
-             Buff speedBuff,
-             Buff reducedEnergyBuff,
-             Buff luckLevelBuff,
-             Buff fishingBuff,
-             Buff farmingBuff)
+    public BuffController(IMonitor monitor, IModHelper helper)
     {
         this.Monitor = monitor;
-        this.Helper = helper;  //helper
-        this.miningBuff = miningBuff;
-        this.foraningBuff = foragingBuff;
-        this.speedBuff = speedBuff;
-        this.reducedEnergyBuff = reducedEnergyBuff;
-        this.luckLevelBuff = luckLevelBuff;
-        this.fishingBuff = fishingBuff;
-        this.farmingBuff = farmingBuff;
+        this.Helper = helper;
     }
 
     public void BuffSpeed()
     {
         Buff speedBuff = new Buff(id: "Speedbuff",
-                displayName: "Speed foraning buff",
-                iconTexture: null,
-                iconSheetIndex: 0,
-                duration: 300_000, // 5 minutos
-                effects: new BuffEffects()
-                {
-                    Speed = { 5 }
-                }
-                );
+            displayName: "Speed foraning buff",
+            iconTexture: null,
+            iconSheetIndex: 0,
+            duration: 300_000, // 5 minutos
+            effects: new BuffEffects()
+            {
+                Speed = { 5 }
+            }
+        );
         Game1.player.applyBuff(speedBuff);
     }
 
     public void BuffForaging()
     {
         Buff foraningBuff = new Buff(id: "Foraningspeed",
-                displayName: "Speed foraning buff",
-                iconTexture: null,
-                iconSheetIndex: 0,
-                duration: 420_000, // 7 minutos
-                effects: new BuffEffects()
-                {
-                    ForagingLevel = { 5 }
-                });
+            displayName: "Speed foraning buff",
+            iconTexture: null,
+            iconSheetIndex: 0,
+            duration: 420_000, // 7 minutos
+            effects: new BuffEffects()
+            {
+                ForagingLevel = { 5 }
+            });
         Game1.player.applyBuff(foraningBuff);
     }
 
     public void BuffMining()
     {
         Buff miningBuff = new Buff(id: "Miningspeed",
-                displayName: "Speed mining buff",
-                iconTexture: null,
-                iconSheetIndex: 0,
-                duration: 420_000, // 7 minutos
-                effects: new BuffEffects()
-                {
-                    MiningLevel = { 5 }
-                });
+            displayName: "Speed mining buff",
+            iconTexture: null,
+            iconSheetIndex: 0,
+            duration: 420_000, // 7 minutos
+            effects: new BuffEffects()
+            {
+                MiningLevel = { 5 }
+            });
         Game1.player.applyBuff(miningBuff);
     }
 
@@ -102,42 +80,42 @@ public class BuffController
     public void BuffLuckLevel()
     {
         Buff luckLevelBuff = new Buff(id: "Lucklevelup",
-                displayName: "Luck level up",
-                iconTexture: null,
-                iconSheetIndex: 0,
-                duration: 480_000, // 7 minutos
-                effects: new BuffEffects()
-                {
-                    LuckLevel = { 2 }
-                });
+            displayName: "Luck level up",
+            iconTexture: null,
+            iconSheetIndex: 0,
+            duration: 480_000, // 7 minutos
+            effects: new BuffEffects()
+            {
+                LuckLevel = { 2 }
+            });
         Game1.player.applyBuff(luckLevelBuff);
     }
 
     public void BuffFishing()
     {
         Buff fishingBuff = new Buff(id: "Fishingspeed",
-                displayName: "Speed Fishing buff",
-                iconTexture: null,
-                iconSheetIndex: 0,
-                duration: 420_000, // 7 minutos
-                effects: new BuffEffects()
-                {
-                    FishingLevel = { 5 }
-                });
+            displayName: "Speed Fishing buff",
+            iconTexture: null,
+            iconSheetIndex: 0,
+            duration: 420_000, // 7 minutos
+            effects: new BuffEffects()
+            {
+                FishingLevel = { 5 }
+            });
         Game1.player.applyBuff(fishingBuff);
     }
 
     public void BuffFarming()
     {
         Buff farmingBuff = new Buff(id: "Farmingspeed",
-                displayName: "Speed farming buff",
-                iconTexture: null,
-                iconSheetIndex: 0,
-                duration: 420_000, // 7 minutos
-                effects: new BuffEffects()
-                {
-                    FarmingLevel = { 5 }
-                });
+            displayName: "Speed farming buff",
+            iconTexture: null,
+            iconSheetIndex: 0,
+            duration: 420_000, // 7 minutos
+            effects: new BuffEffects()
+            {
+                FarmingLevel = { 5 }
+            });
         Game1.player.applyBuff(farmingBuff);
     }
 
@@ -152,8 +130,11 @@ public class BuffController
             float reducedEnergy = energyUsed / 2;
             // Ajustar la energía del jugador
             Game1.player.Stamina += reducedEnergy;
-            this.Monitor.Log($"Acción realizada: Consumo de energía reducido de {energyUsed} a {energyUsed - reducedEnergy}.", LogLevel.Debug);
+            this.Monitor.Log(
+                $"Acción realizada: Consumo de energía reducido de {energyUsed} a {energyUsed - reducedEnergy}.",
+                LogLevel.Debug);
         }
+
         lastStamina = currentStamina; // Actualizar la energía anterior para el siguiente tick
         // Verificar si el buff ha expirado
         if (IsActiveReducedEnergyBuff == false) // Si el buff ha expirado desvincula el evento
@@ -164,55 +145,36 @@ public class BuffController
 
     public bool IsActiveFarmingBuff
     {
-        get
-        {
-            return Game1.player.hasBuff("Farmingspeed");
-        }
+        get { return Game1.player.hasBuff("Farmingspeed"); }
     }
 
     public bool IsActiveFishingBuff
     {
-        get
-        {
-            return Game1.player.hasBuff("Fishingspeed");
-        }
+        get { return Game1.player.hasBuff("Fishingspeed"); }
     }
 
     public bool IsActiveLuckLevelBuff
     {
-        get
-        {
-            return Game1.player.hasBuff("Lucklevelup");
-        }
+        get { return Game1.player.hasBuff("Lucklevelup"); }
     }
 
     public bool IsActiveReducedEnergyBuff
     {
-        get
-        {
-            return Game1.player.hasBuff("ReducedEnergy");
-        }
+        get { return Game1.player.hasBuff("ReducedEnergy"); }
     }
+
     public bool IsActiveMiningBuff
     {
-        get
-        {
-            return Game1.player.hasBuff("Miningspeed");
-        }
+        get { return Game1.player.hasBuff("Miningspeed"); }
     }
+
     public bool IsActiveForaningBuff
     {
-        get
-        {
-            return Game1.player.hasBuff("Foraningspeed");
-        }
+        get { return Game1.player.hasBuff("Foraningspeed"); }
     }
 
     public bool IsActiveSpeedBuff
     {
-        get
-        {
-            return Game1.player.hasBuff("Speedbuff");
-        }
+        get { return Game1.player.hasBuff("Speedbuff"); }
     }
 }
