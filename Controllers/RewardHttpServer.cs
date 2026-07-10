@@ -32,6 +32,9 @@ namespace bGamesPointsMod.Controllers
         // sin riesgo de sobre escritura o condiciones de carrera.
         private static readonly ConcurrentQueue<int> PendingRewards = new ConcurrentQueue<int>();
 
+        // Indica si el juego está listo para aplicar recompensas, volatile sincroniza su visibilidad entre ambos hilos.
+        private static volatile bool _gameReady;
+
         // Inicia el listener HTTP en un thread en segundo plano.
         public static void Start(Action<int> onReward, Action<string>? logger = null)
         {
@@ -79,6 +82,7 @@ namespace bGamesPointsMod.Controllers
                 _logger = null;
                 // Limpia el estado compartido para que un reinicio arranque desde cero.
                 PendingRewards.Clear();
+                _gameReady = false;
             }
         }
 
@@ -91,6 +95,12 @@ namespace bGamesPointsMod.Controllers
             {
                 _onReward?.Invoke(rewardId);
             }
+        }
+
+        // Actualiza la disponibilidad de recompensas desde el hilo principal del juego.
+        public static void SetGameReady(bool isReady)
+        {
+            _gameReady = isReady;
         }
 
         // Background listener loop (bloqueante). Razon por la que el HTTP server corre en un thread separado.
@@ -144,7 +154,11 @@ namespace bGamesPointsMod.Controllers
                 if (isReward)
                     HandleReward(req, resp);
                 else if (isHealth)
-                    SendJson(resp, 200, "{\"status\":\"ok\"}");
+                {
+                    string gameReady = _gameReady ? "true" : "false";
+                    SendJson(resp, 200,
+                        $"{{\"status\":\"ok\",\"game_ready\":{gameReady}}}");
+                }
                 else
                     SendJson(resp, 404, "{\"error\":\"Not Found\"}");
             }
@@ -189,6 +203,15 @@ namespace bGamesPointsMod.Controllers
             if (payload.RewardId <= 0)
             {
                 SendJson(resp, 400, "{\"error\":\"'reward_id' must be a positive integer\"}");
+                return;
+            }
+
+            // No aceptar canjes que no puedan procesarse mientras no haya una partida disponible.
+            // El cliente puede consultar GET /health y reintentar cuando game_ready sea true.
+            if (!_gameReady)
+            {
+                SendJson(resp, 503,
+                    "{\"error\":\"game_not_ready\",\"message\":\"No hay una partida lista para aplicar recompensas\",\"retryable\":true}");
                 return;
             }
 

@@ -42,9 +42,9 @@ namespace bGamesPointsMod
 
             // Suscribir eventos del juego
             helper.Events.GameLoop.DayStarted += OnDayStarted;
-            // Reintenta iniciar el servidor cuando se carga una partida, por si fue detenido al volver al titulo.
+            // Publica la disponibilidad de recompensas cuando se carga una partida.
             helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
-            // Detiene el servidor al volver al titulo para limpiar el listener y el estado pendiente.
+            // Marca las recompensas como no disponibles al volver al título.
             helper.Events.GameLoop.ReturnedToTitle += OnReturnedToTitle;
             // Drena recompensas pendientes en cada tick para aplicar efectos desde el main thread de Stardew.
             helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
@@ -53,19 +53,26 @@ namespace bGamesPointsMod
         // Se ejecuta cuando termina de cargar una partida (se carga un save, etc). Mantiene activo el endpoint POST /reward durante gameplay.
         private void OnSaveLoaded(object? sender, SaveLoadedEventArgs e)
         {
-            RewardHttpServer.Start(ApplyReward, message => this.Monitor.Log(message, LogLevel.Info));
+            UpdateGameReady();
         }
 
-        // Se ejecuta al volver al título. Cierra el listener HTTP para evitar estado viejo entre saves.
+        // Se ejecuta al volver al título. El listener queda activo para que /health informe que no se pueden aplicar rewards.
         private void OnReturnedToTitle(object? sender, ReturnedToTitleEventArgs e)
         {
-            RewardHttpServer.Stop();
+            RewardHttpServer.SetGameReady(false);
         }
 
         // Transfiere cualquier reward recibido por el HTTP thread al main thread del juego.
         private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
         {
+            UpdateGameReady();
             RewardHttpServer.DrainPending();
+        }
+
+        // Esta es la misma condición que protege la aplicación efectiva de una recompensa.
+        private static void UpdateGameReady()
+        {
+            RewardHttpServer.SetGameReady(Context.IsWorldReady && Game1.player != null);
         }
 
         // Callback registrado en RewardHttpServer.Start(). Materializa el reward_id recibido por HTTP.
