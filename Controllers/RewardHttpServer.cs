@@ -6,37 +6,56 @@ using System.Collections.Concurrent;
 
 namespace bGamesPointsMod.Controllers
 {
+    // Resultado que el mod devuelve tras intentar aplicar una recompensa en el hilo principal.
+    class RewardApplicationResult
+    {
+        public bool Succeeded { get; }
+        public string? ErrorCode { get; }
+        public string? Summary { get; }
+
+        public RewardApplicationResult(bool succeeded, string? errorCode = null, string? summary = null)
+        {
+            Succeeded = succeeded;
+            ErrorCode = errorCode;
+            Summary = summary;
+        }
+    }
+
+    // Método del mod que aplica una recompensa y devolver el resultado.
+    delegate RewardApplicationResult ApplyRewardHandler(int rewardId);
+
     /// <summary>
-    /// Servidor HTTP liviano que corre en segundo plano.
-    /// Expone: POST /reward con un payload JSON que incluye <c>reward_id</c>.
-    /// Es agnóstico a la lógica de dominio: solo recibe, válida y deja el valor pendiente
-    /// para que el callback registrado en <see cref="Start"/> lo procese en el main thread.
+    /// Servidor HTTP liviano que corre en segundo plano y recibe canjes de recompensas.
+    /// Expone POST /reward con un JSON que incluye reward_id.
+    /// Valida y encola los canjes para que el mod los aplique en el hilo principal.
     /// </summary>
     internal static class RewardHttpServer
     {
         private const int Port = 7878;
 
-        // Usado por HTTP thread para escuchar requests. Necesita estar set para que ListenLoop() funcione.
+        // Listener HTTP usado por ListenLoop().
         private static HttpListener? _listener;
 
-        // Referencia al HTTP thread. Se inicia en Start() y se detiene en Stop().
+        // Hilo que escucha solicitudes HTTP. Se inicia en Start() y se detiene en Stop().
         private static Thread? _thread;
 
-        // Callback registrado por el aplicativo. Se invoca desde main thread via DrainPending().
-        private static Action<int>? _onReward;
+        // Callback del mod para aplicar una recompensa desde el hilo principal.
+        private static ApplyRewardHandler? _onReward;
 
-        // _logger: Logger compartido. Usado por ambos threads para logging.
+        // Logger compartido por los hilos HTTP y principal.
         private static Action<string>? _logger;
 
-        // Cola concurrente segura para almacenar múltiples recompensas entrantes desde el HTTP thread
-        // sin riesgo de sobre escritura o condiciones de carrera.
-        private static readonly ConcurrentQueue<int> PendingRewards = new ConcurrentQueue<int>();
+        // Cola segura para transferir canjes del hilo HTTP al hilo principal del juego.
+        private static readonly ConcurrentQueue<PendingReward> PendingRewards = new ConcurrentQueue<PendingReward>();
+
+        // Tiempo máximo para que el hilo principal procese un canje ya encolado.
+        private static readonly TimeSpan RewardApplicationTimeout = TimeSpan.FromSeconds(5);
 
         // Indica si el juego está listo para aplicar recompensas, volatile sincroniza su visibilidad entre ambos hilos.
         private static volatile bool _gameReady;
 
-        // Inicia el listener HTTP en un thread en segundo plano.
-        public static void Start(Action<int> onReward, Action<string>? logger = null)
+        // Inicia el listener HTTP en segundo plano.
+        public static void Start(ApplyRewardHandler onReward, Action<string>? logger = null)
         {
             if (_listener != null)
                 return;
@@ -44,15 +63,14 @@ namespace bGamesPointsMod.Controllers
             _onReward = onReward ?? throw new ArgumentNullException(nameof(onReward));
             _logger = logger ?? Console.WriteLine;
 
-            // Limpiar cualquier residuo de ejecuciones anteriores de manera sencilla y clara
+            // Limpia cualquier canje pendiente de una ejecución anterior.
             PendingRewards.Clear();
 
             _listener = new HttpListener();
             _listener.Prefixes.Add($"http://localhost:{Port}/");
             _listener.Start();
 
-            // El listener loop vive en un thread separado para no bloquear el main thread del juego.
-            // Ese thread solo atiende I/O HTTP y deja el efecto final pendiente para DrainPending().
+            // Escucha solicitudes sin bloquear el hilo principal del juego.
             _thread = new Thread(ListenLoop)
             {
                 IsBackground = true,
@@ -72,7 +90,7 @@ namespace bGamesPointsMod.Controllers
             }
             catch
             {
-                // ignore shutdown errors
+                // Ignora errores al detener el listener.
             }
             finally
             {
@@ -80,30 +98,45 @@ namespace bGamesPointsMod.Controllers
                 _thread = null;
                 _onReward = null;
                 _logger = null;
-                // Limpia el estado compartido para que un reinicio arranque desde cero.
+                // Limpia el estado compartido para que un reinicio comience desde cero.
                 PendingRewards.Clear();
                 _gameReady = false;
             }
         }
 
-        // Transfiere todas las recompensas recibidas por el HTTP thread al main thread del juego.
-        // Debe ser llamado en cada game loop.
+        // Aplica en el hilo principal los canjes recibidos por HTTP.
+        // Debe llamarse en cada tick del juego.
         public static void DrainPending()
         {
-            // El callback corre en el main thread de la aplicación, donde es seguro tocar estado compartido.
-            while (PendingRewards.TryDequeue(out int rewardId))
+            // El método del mod se ejecuta aquí, donde es seguro modificar el estado del juego.
+            while (PendingRewards.TryDequeue(out PendingReward? dequeuedReward))
             {
-                _onReward?.Invoke(rewardId);
+                PendingReward pendingReward = dequeuedReward!;
+
+                try
+                {
+                    RewardApplicationResult result = _onReward!(pendingReward.RewardId);
+
+                    // Entrega el resultado al request HTTP que originó este canje.
+                    pendingReward.Completion.TrySetResult(result);
+                }
+                catch (Exception ex)
+                {
+                    Log("[RewardHttpServer] Reward application error: " + ex.Message);
+                    pendingReward.Completion.TrySetResult(new RewardApplicationResult(false,
+                        "reward_application_failed",
+                        "Failed to apply reward."));
+                }
             }
         }
 
-        // Actualiza la disponibilidad de recompensas desde el hilo principal del juego.
+        // Setea si el juego está listo para aplicar recompensas.
         public static void SetGameReady(bool isReady)
         {
             _gameReady = isReady;
         }
 
-        // Background listener loop (bloqueante). Razon por la que el HTTP server corre en un thread separado.
+        // Espera solicitudes HTTP en segundo plano.
         private static void ListenLoop()
         {
             while (true)
@@ -111,7 +144,7 @@ namespace bGamesPointsMod.Controllers
                 HttpListenerContext ctx;
                 try
                 {
-                    // bloquea hasta que llegue un request.
+                    // Bloquea hasta que llegue una solicitud.
                     if (_listener is null)
                         break;
 
@@ -119,7 +152,7 @@ namespace bGamesPointsMod.Controllers
                 }
                 catch (HttpListenerException)
                 {
-                    // Este error ocurre cuando se llama a Stop() y el listener se cierra mientras GetContext() está bloqueando.
+                    // Ocurre al cerrar el listener mientras espera una solicitud.
                     break;
                 }
                 catch (Exception ex)
@@ -128,11 +161,12 @@ namespace bGamesPointsMod.Controllers
                     break;
                 }
 
-                HandleContext(ctx);
+                // Cada request puede esperar al próximo tick; atenderlo aparte mantiene disponible /health.
+                ThreadPool.QueueUserWorkItem(_ => HandleContext(ctx));
             }
         }
 
-        // Punto de entrada para cada request HTTP: decide si corresponde al endpoint /reward o responde 404.
+        // Aborda cada solicitud y decide si corresponde a /reward, /health o una respuesta 404.
         private static void HandleContext(HttpListenerContext ctx)
         {
             var req = ctx.Request;
@@ -140,7 +174,7 @@ namespace bGamesPointsMod.Controllers
 
             try
             {
-                // Router mínimo: solo POST /reward entra al flujo de recompensas.
+                // Solo POST /reward entra al flujo de recompensas.
                 bool isReward = req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase)
                                 && req.Url is not null
                                 && req.Url.AbsolutePath.TrimEnd('/')
@@ -177,11 +211,11 @@ namespace bGamesPointsMod.Controllers
 
         private static void HandleReward(HttpListenerRequest req, HttpListenerResponse resp)
         {
-            // Read body: el JSON del endpoint debe llegar en el request body.
+            // Lee el JSON enviado en el body de la solicitud.
             using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
             var body = reader.ReadToEnd();
 
-            // Parse JSON y aplicar validación básica del payload.
+            // Convierte el JSON y valida los datos básicos.
             RewardPayload? payload;
             try
             {
@@ -199,27 +233,50 @@ namespace bGamesPointsMod.Controllers
                 return;
             }
 
-            // Sanity check basico, la validación de dominio más específica queda en el callback del mod.
+            // La validación específica del reward corresponde al mod.
             if (payload.RewardId <= 0)
             {
                 SendJson(resp, 400, "{\"error\":\"'reward_id' must be a positive integer\"}");
                 return;
             }
 
-            // No aceptar canjes que no puedan procesarse mientras no haya una partida disponible.
+            // No acepta canjes si no hay una partida disponible.
             // El cliente puede consultar GET /health y reintentar cuando game_ready sea true.
             if (!_gameReady)
             {
                 SendJson(resp, 503,
-                    "{\"error\":\"game_not_ready\",\"message\":\"No hay una partida lista para aplicar recompensas\",\"retryable\":true}");
+                    "{\"error\":\"game_not_ready\",\"summary\":\"The game is not ready to apply rewards.\"}");
                 return;
             }
 
-            // Encolar de forma segura en la cola concurrente para ser consumido por el main thread
-            PendingRewards.Enqueue(payload.RewardId);
+            // Encola el canje y espera el resultado que produzca el hilo principal en el próximo tick.
+            var pendingReward = new PendingReward(payload.RewardId);
+            PendingRewards.Enqueue(pendingReward);
             Log($"[RewardHttpServer] Reward queued -> reward_id={payload.RewardId}");
 
-            SendJson(resp, 200, $"{{\"ok\":true,\"reward_id\":{payload.RewardId}}}");
+            if (!pendingReward.Completion.Task.Wait(RewardApplicationTimeout))
+            {
+                SendJson(resp, 504,
+                    "{\"error\":\"application_timeout\",\"summary\":\"Could not confirm reward result.\"}");
+                return;
+            }
+
+            RewardApplicationResult result = pendingReward.Completion.Task.Result;
+            if (result.Succeeded)
+            {
+                SendJson(resp, 200, JsonSerializer.Serialize(new
+                {
+                    ok = true
+                }));
+                return;
+            }
+
+            SendJson(resp, 422, JsonSerializer.Serialize(new
+            {
+                ok = false,
+                error = result.ErrorCode,
+                summary = result.Summary
+            }));
         }
 
 
@@ -236,10 +293,24 @@ namespace bGamesPointsMod.Controllers
             resp.OutputStream.Close();
         }
 
-        // DTO para deserializar el payload del POST /reward.
+        // Datos esperados en POST /reward.
         private sealed class RewardPayload
         {
             [JsonPropertyName("reward_id")] public int RewardId { get; set; }
+        }
+
+        // Une el reward recibido con la respuesta HTTP que debe esperar su resultado.
+        private sealed class PendingReward
+        {
+            public int RewardId { get; }
+
+            public TaskCompletionSource<RewardApplicationResult> Completion { get; } =
+                new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public PendingReward(int rewardId)
+            {
+                RewardId = rewardId;
+            }
         }
     }
 }

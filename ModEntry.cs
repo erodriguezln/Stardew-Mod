@@ -36,27 +36,26 @@ namespace bGamesPointsMod
             levelUpController = new LevelUpController(this.Monitor, this.Helper, miningSkill, foraningSkill,
                 fishingSkill, combatSkill, farmingSkill);
 
-            // Inicia el servidor HTTP de recompensas en segundo plano.
-            // El server solo recibe reward_id y deja la ejecucion final para ApplyReward en main thread.
+            // Inicia el servidor HTTP, ApplyReward ejecuta el canje en el hilo principal.
             RewardHttpServer.Start(ApplyReward, message => this.Monitor.Log(message, LogLevel.Info));
 
             // Suscribir eventos del juego
             helper.Events.GameLoop.DayStarted += OnDayStarted;
-            // Publica la disponibilidad de recompensas cuando se carga una partida.
+            // Actualiza la disponibilidad de recompensas al cargar una partida.
             helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
             // Marca las recompensas como no disponibles al volver al título.
             helper.Events.GameLoop.ReturnedToTitle += OnReturnedToTitle;
-            // Drena recompensas pendientes en cada tick para aplicar efectos desde el main thread de Stardew.
+            // Aplica los canjes pendientes en cada tick desde el hilo principal de Stardew.
             helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
         }
 
-        // Se ejecuta cuando termina de cargar una partida (se carga un save, etc). Mantiene activo el endpoint POST /reward durante gameplay.
+        // Se ejecuta al terminar de cargar una partida.
         private void OnSaveLoaded(object? sender, SaveLoadedEventArgs e)
         {
             UpdateGameReady();
         }
 
-        // Se ejecuta al volver al título. El listener queda activo para que /health informe que no se pueden aplicar rewards.
+        // Se ejecuta al volver al título. El listener queda activo para que /health informe la disponibilidad.
         private void OnReturnedToTitle(object? sender, ReturnedToTitleEventArgs e)
         {
             RewardHttpServer.SetGameReady(false);
@@ -69,20 +68,21 @@ namespace bGamesPointsMod
             RewardHttpServer.DrainPending();
         }
 
-        // Esta es la misma condición que protege la aplicación efectiva de una recompensa.
+        // Usa la misma condición que protege la aplicación efectiva de una recompensa.
         private static void UpdateGameReady()
         {
             RewardHttpServer.SetGameReady(Context.IsWorldReady && Game1.player != null);
         }
 
-        // Callback registrado en RewardHttpServer.Start(). Materializa el reward_id recibido por HTTP.
+        // Aplica una recompensa en Stardew y devuelve el resultado al servidor HTTP.
         // El server no conoce gameplay, solo entrega el id (la idea es que sea agnostico razon por la que se usa el mismo codigo en terraria).
-        private void ApplyReward(int rewardId)
+        private RewardApplicationResult ApplyReward(int rewardId)
         {
             if (!Context.IsWorldReady || Game1.player == null)
             {
                 Monitor.Log($"Reward '{rewardId}' ignored because the world is not ready.", LogLevel.Warn);
-                return;
+                return new RewardApplicationResult(false, "game_not_ready",
+                    "No game is ready to apply rewards.");
             }
 
             switch (rewardId)
@@ -134,13 +134,15 @@ namespace bGamesPointsMod
                     break;
                 default:
                     Monitor.Log($"Unknown reward_id={rewardId}. Reward ignored.", LogLevel.Warn);
-                    return;
+                    return new RewardApplicationResult(false, "unknown_reward",
+                        "Reward is not supported.");
             }
 
             Monitor.Log($"Reward applied: reward_id={rewardId}.", LogLevel.Info);
+            return new RewardApplicationResult(true);
         }
 
-        private void OnDayStarted(object sender, DayStartedEventArgs e)
+        private void OnDayStarted(object? sender, DayStartedEventArgs e)
         {
             // Verifica si el jugador tiene un pico equipado
             if (Game1.player.CurrentTool is Pickaxe pickaxe)
