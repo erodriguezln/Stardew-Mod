@@ -59,6 +59,7 @@ namespace bGamesPointsMod
         private void OnReturnedToTitle(object? sender, ReturnedToTitleEventArgs e)
         {
             RewardHttpServer.SetGameReady(false);
+            RewardHttpServer.DrainPendingAndCancel();
         }
 
         // Transfiere cualquier reward recibido por el HTTP thread al main thread del juego.
@@ -68,7 +69,7 @@ namespace bGamesPointsMod
             RewardHttpServer.DrainPending();
         }
 
-        // Usa la misma condición que protege la aplicación efectiva de una recompensa.
+        // Actualiza el estado del juego para permitir o no la aplicacion de recompensas.
         private static void UpdateGameReady()
         {
             RewardHttpServer.SetGameReady(Context.IsWorldReady && Game1.player != null);

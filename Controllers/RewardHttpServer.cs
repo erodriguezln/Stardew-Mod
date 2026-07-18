@@ -115,6 +115,7 @@ namespace bGamesPointsMod.Controllers
 
                 try
                 {
+                    // Llama al callback del mod para aplicar la recompensa y obtener el resultado.
                     RewardApplicationResult result = _onReward!(pendingReward.RewardId);
 
                     // Entrega el resultado al request HTTP que originó este canje.
@@ -127,6 +128,16 @@ namespace bGamesPointsMod.Controllers
                         "reward_application_failed",
                         "Failed to apply reward."));
                 }
+            }
+        }
+
+        // Pensado para cuando el juego vuelve al título y habian rewards pendientes. Cancela todos los canjes pendientes y devuelve un error a cada request HTTP.
+        public static void DrainPendingAndCancel()
+        {
+            while (PendingRewards.TryDequeue(out PendingReward? pending))
+            {
+                pending.Completion.TrySetResult(new RewardApplicationResult(false, "game_not_ready",
+                    "The game is not ready to apply rewards."));
             }
         }
 
@@ -161,7 +172,7 @@ namespace bGamesPointsMod.Controllers
                     break;
                 }
 
-                // Cada request puede esperar al próximo tick; atenderlo aparte mantiene disponible /health.
+                // Cada request puede esperar al próximo tick, atenderlo aparte mantiene disponible /health.
                 ThreadPool.QueueUserWorkItem(_ => HandleContext(ctx));
             }
         }
@@ -254,6 +265,7 @@ namespace bGamesPointsMod.Controllers
             PendingRewards.Enqueue(pendingReward);
             Log($"[RewardHttpServer] Reward queued -> reward_id={payload.RewardId}");
 
+            // Espera hasta que el hilo principal procese el canje y devuelva un resultado.
             if (!pendingReward.Completion.Task.Wait(RewardApplicationTimeout))
             {
                 SendJson(resp, 504,
