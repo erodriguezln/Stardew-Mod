@@ -72,14 +72,19 @@ namespace bGamesPointsMod
         // Actualiza el estado del juego para permitir o no la aplicacion de recompensas.
         private static void UpdateGameReady()
         {
-            RewardHttpServer.SetGameReady(Context.IsWorldReady && Game1.player != null);
+            RewardHttpServer.SetGameReady(IsGameReady());
+        }
+
+        private static bool IsGameReady()
+        {
+            return Context.IsWorldReady && Game1.player != null;
         }
 
         // Aplica una recompensa en Stardew y devuelve el resultado al servidor HTTP.
         // El server no conoce gameplay, solo entrega el id (la idea es que sea agnostico razon por la que se usa el mismo codigo en terraria).
         private RewardApplicationResult ApplyReward(int rewardId)
         {
-            if (!Context.IsWorldReady || Game1.player == null)
+            if (!IsGameReady())
             {
                 Monitor.Log($"Reward '{rewardId}' ignored because the world is not ready.", LogLevel.Warn);
                 return new RewardApplicationResult(false, "game_not_ready",
